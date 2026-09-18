@@ -1,142 +1,273 @@
-from datetime import date, datetime, time, timedelta
+import hashlib
+import hmac
+import re
+import uuid
+from datetime import date, datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
+
 import pandas as pd
 import streamlit as st
-from supabase_client import get_supabase
+from postgrest.exceptions import APIError
+from supabase import Client, create_client
 
-st.set_page_config(page_title="Miskolci Kutyakozmetika", page_icon="🐕", layout="wide")
+st.set_page_config(
+    page_title="Kutyakozmetika Miskolc",
+    page_icon="🐶",
+    layout="centered",
+)
 
 SERVICES = {
-    "Teljes kozmetika, kistestű": 9500,
-    "Teljes kozmetika, közepes testű": 13500,
-    "Teljes kozmetika, nagytestű": 17500,
-    "Fürdetés és szárítás": 7000,
-    "Karomvágás": 2500,
-    "Konzultáció": 0,
+    "Kistestű nyírás": 90,
+    "Nagytestű nyírás": 120,
+    "Fürdetés": 60,
+    "Karomvágás": 30,
 }
+TIMES = ["09:00", "10:30", "13:00", "15:00"]
+BUDAPEST = ZoneInfo("Europe/Budapest")
+PHONE_RE = re.compile(r"^[+0-9][0-9 ()/-]{6,24}$")
 
-def db():
+st.markdown("""
+<style>
+.block-container {max-width: 920px; padding-top: 2rem; padding-bottom: 3rem;}
+.hero {padding: 1.6rem; border-radius: 22px; background: linear-gradient(135deg,#ecfdf5,#fffbeb); margin-bottom: 1.2rem;}
+.hero h1 {margin: 0; color:#14532d;}
+.success-box {padding:1.5rem; border:1px solid #86efac; background:#f0fdf4; border-radius:18px; text-align:center;}
+.small-note {color:#64748b; font-size:.86rem;}
+div[data-testid="stButton"] button {border-radius:12px;}
+</style>
+""", unsafe_allow_html=True)
+
+
+def get_secret(name: str, default=None):
     try:
-        return get_supabase()
-    except Exception as exc:
-        st.error(f"Adatbázis-kapcsolati hiba: {exc}")
-        st.stop()
+        return st.secrets[name]
+    except (KeyError, FileNotFoundError):
+        return default
 
-def flash():
-    msg = st.session_state.pop("flash", None)
-    if msg:
-        st.success(msg)
 
-def is_admin() -> bool:
-    return bool(st.session_state.get("admin_user"))
+@st.cache_resource
+def get_supabase() -> Client:
+    url = get_secret("SUPABASE_URL")
+    key = get_secret("SUPABASE_SECRET_KEY")
+    if not url or not key:
+        raise RuntimeError("Hiányzik a SUPABASE_URL vagy SUPABASE_SECRET_KEY a Streamlit Secrets beállításból.")
+    return create_client(url, key)
 
-def login_panel():
-    with st.form("login"):
-        email = st.text_input("E-mail")
-        password = st.text_input("Jelszó", type="password")
+
+def active_bookings_for_day(day_iso: str) -> list[dict]:
+    response = (
+        get_supabase()
+        .table("bookings")
+        .select("id,booking_date,booking_time")
+        .eq("booking_date", day_iso)
+        .eq("status", "active")
+        .execute()
+    )
+    return response.data or []
+
+
+def load_admin_bookings() -> list[dict]:
+    response = (
+        get_supabase()
+        .table("bookings")
+        .select("id,created_at,booking_date,booking_time,service,duration_min,customer_name,phone,dog_name,dog_breed,notes,status")
+        .eq("status", "active")
+        .order("booking_date")
+        .order("booking_time")
+        .execute()
+    )
+    return response.data or []
+
+
+def hash_phone(value: str) -> str:
+    pepper = str(get_secret("PHONE_HASH_PEPPER", "change-this-now"))
+    return hashlib.sha256((pepper + value).encode("utf-8")).hexdigest()
+
+
+def friendly_database_error(exc: Exception) -> str:
+    text = str(exc)
+    if "23505" in text or "duplicate key" in text.lower():
+        return "Ezt az időpontot időközben lefoglalták. Válassz másikat."
+    return "Az adatbázis jelenleg nem érhető el. Kérjük, próbáld újra később."
+
+
+def authenticate_admin() -> bool:
+    expected = str(get_secret("ADMIN_PASSWORD", ""))
+    if not expected:
+        st.error("Az ADMIN_PASSWORD nincs beállítva a Streamlit Secrets között.")
+        return False
+    if st.session_state.get("admin_authenticated"):
+        return True
+    with st.form("admin_login"):
+        password = st.text_input("Admin jelszó", type="password")
         submitted = st.form_submit_button("Belépés", use_container_width=True)
     if submitted:
-        try:
-            response = db().auth.sign_in_with_password({"email": email, "password": password})
-            user = response.user
-            profile = db().table("profiles").select("role,full_name").eq("id", user.id).single().execute()
-            if not profile.data or profile.data.get("role") != "admin":
-                db().auth.sign_out()
-                st.error("Ehhez a fiókhoz nincs adminisztrátori jogosultság.")
-            else:
-                st.session_state.admin_user = {"id": user.id, "email": user.email, **profile.data}
-                st.rerun()
-        except Exception as exc:
-            st.error(f"Sikertelen belépés: {exc}")
-
-def booking_page():
-    st.header("Időpontkérés")
-    st.caption("Az időpont az adminisztrátori visszaigazolás után válik véglegessé.")
-    min_day = date.today() + timedelta(days=1)
-    with st.form("booking", clear_on_submit=True):
-        c1, c2 = st.columns(2)
-        with c1:
-            owner_name = st.text_input("Gazdi neve *", max_chars=120)
-            email = st.text_input("E-mail *", max_chars=200)
-            phone = st.text_input("Telefonszám *", max_chars=40)
-            dog_name = st.text_input("Kutya neve *", max_chars=100)
-        with c2:
-            breed = st.text_input("Fajta", max_chars=120)
-            service = st.selectbox("Szolgáltatás *", list(SERVICES))
-            appt_date = st.date_input("Kért nap *", min_value=min_day, value=min_day)
-            appt_time = st.time_input("Kért időpont *", value=time(9, 0), step=1800)
-        notes = st.text_area("Megjegyzés, viselkedés, egészségügyi tudnivaló", max_chars=1000)
-        privacy = st.checkbox("Elfogadom, hogy az adataimat az időpont egyeztetéséhez kezeljék. *")
-        sent = st.form_submit_button("Időpontkérés elküldése", type="primary", use_container_width=True)
-    if sent:
-        if not all(x.strip() for x in [owner_name, email, phone, dog_name]) or not privacy:
-            st.error("Töltsd ki a kötelező mezőket és fogadd el az adatkezelést.")
-            return
-        if "@" not in email:
-            st.error("Adj meg érvényes e-mail-címet.")
-            return
-        payload = {
-            "owner_name": owner_name.strip(), "email": email.strip().lower(), "phone": phone.strip(),
-            "dog_name": dog_name.strip(), "breed": breed.strip() or None, "service": service,
-            "price_huf": SERVICES[service], "appointment_at": datetime.combine(appt_date, appt_time).isoformat(),
-            "notes": notes.strip() or None, "status": "pending"
-        }
-        try:
-            db().table("appointments").insert(payload).execute()
-            st.session_state.flash = "Köszönjük! Az időpontkérést rögzítettük."
+        if hmac.compare_digest(password, expected):
+            st.session_state.admin_authenticated = True
             st.rerun()
-        except Exception as exc:
-            st.error(f"A mentés nem sikerült: {exc}")
+        st.error("Hibás jelszó.")
+    return False
+
 
 def admin_page():
-    st.header("Adminisztráció")
-    if not is_admin():
-        login_panel(); return
-    st.caption(f"Belépve: {st.session_state.admin_user.get('full_name') or st.session_state.admin_user['email']}")
-    if st.button("Kijelentkezés"):
-        try: db().auth.sign_out()
-        except Exception: pass
-        st.session_state.pop("admin_user", None); st.rerun()
-    status_filter = st.multiselect("Állapot", ["pending", "confirmed", "completed", "cancelled"], default=["pending", "confirmed"])
+    st.title("🔒 Adminisztráció")
+    st.caption("Ez az oldal csak a külön adminlinkkel és jelszóval használható.")
+    if not authenticate_admin():
+        return
+
+    c1, c2 = st.columns(2)
+    if c1.button("Frissítés", use_container_width=True):
+        st.rerun()
+    if c2.button("Kijelentkezés", use_container_width=True):
+        st.session_state.admin_authenticated = False
+        st.rerun()
+
     try:
-        query = db().table("appointments").select("*").order("appointment_at")
-        if status_filter:
-            query = query.in_("status", status_filter)
-        rows = query.execute().data or []
+        bookings = load_admin_bookings()
     except Exception as exc:
-        st.error(f"Lekérdezési hiba: {exc}"); return
-    if not rows:
-        st.info("Nincs a szűrésnek megfelelő időpont."); return
-    df = pd.DataFrame(rows)
-    show_cols = [c for c in ["appointment_at", "owner_name", "phone", "dog_name", "breed", "service", "price_huf", "status"] if c in df.columns]
-    st.dataframe(df[show_cols], use_container_width=True, hide_index=True)
-    labels = {f"{r['appointment_at']} | {r['dog_name']} | {r['owner_name']}": r["id"] for r in rows}
-    selected_label = st.selectbox("Időpont kiválasztása", labels.keys())
-    selected = next(r for r in rows if r["id"] == labels[selected_label])
-    with st.form("update"):
-        new_status = st.selectbox("Új állapot", ["pending", "confirmed", "completed", "cancelled"], index=["pending", "confirmed", "completed", "cancelled"].index(selected["status"]))
-        admin_note = st.text_area("Belső megjegyzés", value=selected.get("admin_note") or "")
-        save = st.form_submit_button("Módosítás mentése", type="primary")
-    if save:
+        st.error(friendly_database_error(exc))
+        return
+
+    today_iso = datetime.now(BUDAPEST).date().isoformat()
+    m1, m2, m3 = st.columns(3)
+    m1.metric("Aktív foglalások", len(bookings))
+    m2.metric("Mai foglalások", sum(x["booking_date"] == today_iso for x in bookings))
+    m3.metric("Jövőbeli foglalások", sum(x["booking_date"] >= today_iso for x in bookings))
+
+    query = st.text_input("Keresés név, telefon, kutya, fajta vagy szolgáltatás alapján")
+    if query.strip():
+        needle = query.strip().casefold()
+        fields = ("customer_name", "phone", "dog_name", "dog_breed", "service")
+        bookings = [b for b in bookings if needle in " ".join(str(b.get(k) or "") for k in fields).casefold()]
+
+    if not bookings:
+        st.info("Nincs megjeleníthető foglalás.")
+        return
+
+    for item in bookings:
+        with st.container(border=True):
+            top = st.columns([1.2, 1.4, 1.3, 1.5, .7])
+            top[0].markdown(f"**{item['booking_date']}**  \\n{item['booking_time']}")
+            top[1].write(item.get("service", ""))
+            top[2].write(item.get("customer_name", ""))
+            top[3].write(item.get("phone", ""))
+            if top[4].button("Törlés", key=f"delete_{item['id']}"):
+                try:
+                    (
+                        get_supabase()
+                        .table("bookings")
+                        .update({"status": "cancelled", "cancelled_at": datetime.now(timezone.utc).isoformat()})
+                        .eq("id", item["id"])
+                        .execute()
+                    )
+                    st.success("A foglalás törölve.")
+                    st.rerun()
+                except Exception as exc:
+                    st.error(friendly_database_error(exc))
+            dog = item.get("dog_name") or "Nincs megadva"
+            breed = item.get("dog_breed") or "Nincs megadva"
+            st.caption(f"Kutya: {dog} | Fajta: {breed} | Időtartam: {item.get('duration_min', '')} perc")
+            if item.get("notes"):
+                st.write("Megjegyzés:", item["notes"])
+
+    export_fields = ["booking_date", "booking_time", "service", "duration_min", "customer_name", "phone", "dog_name", "dog_breed", "notes", "created_at"]
+    export = [{key: row.get(key, "") for key in export_fields} for row in bookings]
+    csv = pd.DataFrame(export).to_csv(index=False).encode("utf-8-sig")
+    st.download_button("CSV letöltése", csv, "foglalasok.csv", "text/csv", use_container_width=True)
+
+
+def booking_page():
+    st.markdown('<div class="hero"><h1>🐶 Kutyakozmetika Miskolc</h1><p>Válassz szolgáltatást és szabad időpontot.</p></div>', unsafe_allow_html=True)
+
+    if st.session_state.get("booking_success"):
+        result = st.session_state.booking_success
+        st.markdown(
+            f'<div class="success-box"><h2>Köszönjük!</h2><p>Időpontja rögzítve:</p><h3>{result["date"]} {result["time"]}</h3></div>',
+            unsafe_allow_html=True,
+        )
+        if st.button("Új foglalás", use_container_width=True):
+            del st.session_state.booking_success
+            st.rerun()
+        return
+
+    service = st.selectbox(
+        "Válassz szolgáltatást",
+        list(SERVICES),
+        index=None,
+        placeholder="Szolgáltatás kiválasztása",
+    )
+    min_day = datetime.now(BUDAPEST).date()
+    max_day = min_day + timedelta(days=int(get_secret("BOOKING_DAYS_AHEAD", 90)))
+    selected_day = st.date_input("Válassz napot", min_value=min_day, max_value=max_day)
+
+    available = []
+    if selected_day.weekday() >= 5:
+        st.warning("Hétvégére jelenleg nem fogadunk online foglalást.")
+    else:
         try:
-            db().table("appointments").update({"status": new_status, "admin_note": admin_note.strip() or None}).eq("id", selected["id"]).execute()
-            st.success("Módosítás elmentve."); st.rerun()
+            occupied = {x["booking_time"] for x in active_bookings_for_day(selected_day.isoformat())}
+            available = [slot for slot in TIMES if slot not in occupied]
         except Exception as exc:
-            st.error(f"Sikertelen módosítás: {exc}")
+            st.error(friendly_database_error(exc))
 
-def main():
-    st.title("🐕 Miskolci Kutyakozmetika")
-    flash()
-    page = st.sidebar.radio("Menü", ["Kezdőlap", "Időpontkérés", "Admin"])
-    if page == "Kezdőlap":
-        st.subheader("Kíméletes ápolás, átlátható időpontfoglalás")
-        st.write("Ez az MVP bemutatja a nyilvános szolgáltatáslistát, az időpontkérést és a védett adminisztrációt.")
-        cols = st.columns(3)
-        for i, (name, price) in enumerate(SERVICES.items()):
-            with cols[i % 3]:
-                st.metric(name, "Egyedi ár" if price == 0 else f"{price:,} Ft".replace(",", " "))
-        st.info("Cím, nyitvatartás, telefonszám és adatkezelési tájékoztató a végleges induláskor illesztendő be.")
-    elif page == "Időpontkérés": booking_page()
-    else: admin_page()
+    chosen_time = None
+    if available:
+        chosen_time = st.radio("Kiválasztható időpontok", available, horizontal=True, index=None)
+    else:
+        st.info("Erre a napra nincs szabad időpont.")
 
-if __name__ == "__main__":
-    main()
+    with st.form("booking_form"):
+        name = st.text_input("Név", max_chars=80)
+        phone = st.text_input("Telefonszám", placeholder="+36 30 123 4567", max_chars=25)
+        dog_name = st.text_input("Kutya neve", max_chars=60)
+        dog_breed = st.text_input("Kutya fajtája", max_chars=80)
+        notes = st.text_area("Megjegyzés, például érzékenység vagy viselkedés", max_chars=500)
+        privacy = st.checkbox("Elfogadom, hogy az adataimat kizárólag az időpont kezelése céljából tárolják.")
+        submitted = st.form_submit_button(
+            "Időpont foglalása",
+            use_container_width=True,
+            disabled=not (service and chosen_time),
+        )
+
+    if submitted:
+        clean_name = " ".join(name.split())
+        clean_phone = " ".join(phone.split())
+        if len(clean_name) < 3:
+            st.error("Kérjük, adj meg érvényes nevet.")
+            return
+        if not PHONE_RE.fullmatch(clean_phone):
+            st.error("Kérjük, adj meg érvényes telefonszámot.")
+            return
+        if not privacy:
+            st.error("A foglaláshoz szükséges az adatkezelési hozzájárulás.")
+            return
+
+        record = {
+            "id": str(uuid.uuid4()),
+            "booking_date": selected_day.isoformat(),
+            "booking_time": chosen_time,
+            "service": service,
+            "duration_min": SERVICES[service],
+            "customer_name": clean_name,
+            "phone": clean_phone,
+            "phone_hash": hash_phone(clean_phone),
+            "dog_name": " ".join(dog_name.split()) or None,
+            "dog_breed": " ".join(dog_breed.split()) or None,
+            "notes": notes.strip() or None,
+            "status": "active",
+        }
+        try:
+            # Az egyedi részindex az adatbázisban is megakadályozza a dupla foglalást.
+            get_supabase().table("bookings").insert(record).execute()
+            st.session_state.booking_success = {"date": record["booking_date"], "time": record["booking_time"]}
+            st.rerun()
+        except (APIError, Exception) as exc:
+            st.error(friendly_database_error(exc))
+
+    st.markdown('<p class="small-note">Lemondáshoz kérjük, telefonon jelezd. A személyes adatok nem kerülnek a nyilvános GitHub repositoryba.</p>', unsafe_allow_html=True)
+
+
+if st.query_params.get("admin", "0") == "1":
+    admin_page()
+else:
+    booking_page()
