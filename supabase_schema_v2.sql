@@ -1,0 +1,6 @@
+create extension if not exists pgcrypto;
+create table if not exists public.dogs (id uuid primary key default gen_random_uuid(),created_at timestamptz not null default now(),name text not null,breed text,notes text,customer_name text not null,customer_phone text not null,customer_email text not null);
+create table if not exists public.bookings (id uuid primary key default gen_random_uuid(),created_at timestamptz not null default now(),booking_date date not null,booking_time text not null,service text not null,duration_min integer not null,customer_name text not null,phone text not null,email text not null,dog_id uuid references public.dogs(id) on delete set null,status text not null default 'active',cancelled_at timestamptz,reminder_sent_at timestamptz);
+create unique index if not exists bookings_unique_active_slot on public.bookings(booking_date,booking_time) where status='active';
+create unique index if not exists dogs_owner_name_unique on public.dogs(lower(customer_email),lower(name));
+alter table public.bookings enable row level security; alter table public.dogs enable row level security; revoke all on public.bookings from anon,authenticated; revoke all on public.dogs from anon,authenticated;
