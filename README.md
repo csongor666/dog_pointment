@@ -1,72 +1,59 @@
-# Kutyakozmetika Miskolc időpontfoglaló
+# Miskolci Kutyakozmetika MVP
 
-Streamlit alkalmazás GitHub-alapú JSON adattárolással.
+Streamlit frontend, Supabase adatbázis és hitelesítés, nyilvános GitHub repóhoz előkészítve.
 
 ## Funkciók
+- nyilvános szolgáltatáslista
+- időpontkérés Supabase-be
+- admin belépés e-mail/jelszóval
+- időpontok szűrése és állapotkezelése
+- Row Level Security szabályok
+- titkok kizárása Gitből
 
-- szolgáltatás, nap és időpont kiválasztása
-- foglalt időpontok tiltása
-- GitHub Contents API-alapú mentés
-- SHA-ütközés kezelése párhuzamos foglalásoknál
-- jelszóval védett adminoldal
-- keresés, törlés és CSV-export
+## 1. Supabase
+1. Hozz létre projektet.
+2. SQL Editorban futtasd a `supabase_schema.sql` fájlt.
+3. Authentication > Users alatt hozz létre admin felhasználót.
+4. Futtasd az SQL-fájl végén lévő admin-profil beszúrást a saját e-mail-címeddel.
+5. Project Settings > API alatt másold ki a Project URL-t és a publishable key-t. Soha ne tedd a service role kulcsot a Streamlit alkalmazásba.
 
-## GitHub repository létrehozása
-
-1. Hozz létre egy privát repositoryt, például `kutyakozmetika-foglalas` néven.
-2. Töltsd fel a projekt összes fájlját. A `.streamlit/secrets.toml` fájlt soha ne töltsd fel.
-3. A repositoryban maradjon meg a `data/bookings.json` fájl.
-4. Hozz létre fine-grained personal access tokent, amely csak ehhez a repositoryhoz fér hozzá.
-5. A tokennek a **Contents: Read and write** jogosultság szükséges.
-
-## Helyi futtatás
-
-Másold át a mintafájlt:
-
-```bash
-cp .streamlit/secrets.example.toml .streamlit/secrets.toml
-```
-
-Windows PowerShellben:
-
-```powershell
-Copy-Item .streamlit/secrets.example.toml .streamlit/secrets.toml
-```
-
-Töltsd ki a valódi adatokat, majd:
-
+## 2. Helyi futtatás
 ```bash
 python -m venv .venv
-python -m pip install -r requirements.txt
+# Windows:
+.venv\Scripts\activate
+# Linux/macOS:
+# source .venv/bin/activate
+
+pip install -r requirements.txt
+cp .streamlit/secrets.toml.example .streamlit/secrets.toml
 streamlit run app.py
 ```
+Windows alatt a `secrets.toml.example` kézzel is lemásolható `secrets.toml` néven. Töltsd ki a Supabase URL-t és publishable key-t.
 
-## Streamlit Community Cloud
-
-1. Nyisd meg a `share.streamlit.io` oldalt.
-2. Válaszd a **Create app** lehetőséget.
-3. Add meg a repositoryt, a `main` ágat és az `app.py` fájlt.
-4. Az **Advanced settings / Secrets** mezőbe másold a saját `secrets.toml` tartalmát.
-5. Indítsd el a telepítést.
-
-Publikus foglalási oldal:
-
-```text
-https://SAJAT-APP.streamlit.app/
+## 3. GitHub
+```bash
+git init
+git add .
+git commit -m "Initial Streamlit Supabase MVP"
+git branch -M main
+git remote add origin https://github.com/FELHASZNALO/REPO.git
+git push -u origin main
 ```
+A `.gitignore` miatt a valódi titkok nem kerülnek a nyilvános repóba.
 
-Adminoldal:
-
-```text
-https://SAJAT-APP.streamlit.app/?admin=1
+## 4. Streamlit Community Cloud
+1. New app, majd válaszd ki a GitHub repót és az `app.py` fájlt.
+2. App settings > Secrets alatt add meg:
+```toml
+SUPABASE_URL = "https://YOUR_PROJECT.supabase.co"
+SUPABASE_PUBLISHABLE_KEY = "sb_publishable_REPLACE_ME"
 ```
+3. Deploy.
 
-A külön adminlink nem biztonsági védelem, ezért az oldal az `ADMIN_PASSWORD` értékét is bekéri.
-
-## Adatvédelem
-
-A rendszer nevet és telefonszámot tárol. Éles használat előtt készíts adatkezelési tájékoztatót, határozz meg törlési időt, korlátozd a GitHub repository hozzáférését, és csak a szükséges adatokat gyűjtsd. A repository legyen privát.
-
-## Korlát
-
-A GitHub JSON-tárolás kis forgalmú induló rendszerhez megfelelő. Nagyobb forgalomnál célszerű tranzakciókat támogató adatbázisra, például PostgreSQL-re áttérni.
+## Élesítés előtt
+- valós árak, cím, nyitvatartás és elérhetőség
+- adatkezelési tájékoztató és törlési folyamat
+- spamvédelem vagy rate limit
+- e-mailes visszaigazolás Edge Functionnel vagy tranzakciós e-mail szolgáltatóval
+- időpontütközések és üzleti nyitvatartás szerveroldali ellenőrzése
