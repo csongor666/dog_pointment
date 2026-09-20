@@ -1,9 +1,9 @@
-# Kutyakozmetika v2
+# Kutyakozmetika V5
 
-1. Futtasd a `supabase_schema_v2.sql` fájlt a Supabase SQL Editorban.
-2. Töltsd fel a fájlokat GitHubra.
-3. Streamlit Secrets: a `secrets.example.toml` alapján.
-4. GitHub Settings > Secrets and variables > Actions alatt vedd fel ugyanazt a négy szolgáltatási titkot.
-5. Actions alatt engedélyezd és kézzel teszteld a Daily reminders workflow-t.
+Felhasználói és admin heti naptár, színezett sávok, kapacitás és közvetlen szerkesztés.
 
-Admin: `?admin=1`. A cron 06:00 UTC-kor fut, ami Berlin/Budapest szerint télen 07:00, nyáron 08:00.
+## Frissítés
+1. A V3 és V4 migrációk legyenek telepítve.
+2. Futtasd a supabase_v5_migration.sql fájlt.
+3. Töltsd fel a fájlokat GitHubra.
+4. Rebootold a Streamlit appot.
