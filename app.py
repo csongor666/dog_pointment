@@ -1,5 +1,7 @@
 import hmac
 import re
+import smtplib
+from email.message import EmailMessage
 from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
@@ -206,6 +208,45 @@ def week_navigation(key):
     return st.session_state[key]
 
 
+def send_custom_email(recipient, subject, body, email_type="manual", booking_id=None):
+    message = EmailMessage()
+    message["From"] = secret("GMAIL_ADDRESS")
+    message["To"] = recipient
+    message["Subject"] = subject
+    message.set_content(body)
+    try:
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=30) as smtp:
+            smtp.login(secret("GMAIL_ADDRESS"), str(secret("GMAIL_APP_PASSWORD", "")).replace(" ", ""))
+            smtp.send_message(message)
+        DB.table("email_logs").insert({
+            "booking_id": booking_id, "email_type": email_type,
+            "recipient": recipient, "subject": subject,
+            "success": True, "error_message": None,
+        }).execute()
+        return True, None
+    except Exception as exc:
+        try:
+            DB.table("email_logs").insert({
+                "booking_id": booking_id, "email_type": email_type,
+                "recipient": recipient, "subject": subject,
+                "success": False, "error_message": str(exc)[:2000],
+            }).execute()
+        except Exception:
+            pass
+        return False, str(exc)
+
+
+def chronological_day_items(day, service, bundle, admin=False):
+    free_slots, day_schedule = available_slots_from_bundle(day, SERVICES[service], bundle, admin=admin)
+    active = bookings_from_bundle(day, bundle, ["active"])
+    items = []
+    for slot in free_slots:
+        items.append({"time": slot, "kind": "free"})
+    for booking in active:
+        items.append({"time": str(booking["booking_time"])[:5], "kind": "busy", "booking": booking})
+    items.sort(key=lambda item: item["time"])
+    return items, day_schedule
+
 def public_week_calendar(service):
     week_start = week_navigation("public_week")
     bundle = load_public_week(week_start.isoformat())
@@ -215,20 +256,19 @@ def public_week_calendar(service):
         day = week_start + timedelta(days=day_index)
         with day_column:
             st.markdown(f'<div class="day-head">{DAY_NAMES[day.weekday()]}<br>{day:%m.%d}</div>', unsafe_allow_html=True)
-            free_slots, day_schedule = available_slots_from_bundle(day, SERVICES[service], bundle)
-            active = bookings_from_bundle(day, bundle, ["active"])
+            items, day_schedule = chronological_day_items(day, service, bundle)
             if not day_schedule.get("open"):
                 st.markdown('<div class="slot-card slot-closed">Nem foglalható</div>', unsafe_allow_html=True)
                 continue
-            for booking in active:
-                st.markdown(
-                    f'<div class="slot-card slot-busy">{str(booking["booking_time"])[:5]}<br>Foglalt</div>',
-                    unsafe_allow_html=True,
-                )
-            for slot in free_slots:
-                if st.button(slot, key=f"free_{day}_{slot}", type="primary", use_container_width=True):
-                    selected = (day, slot)
-            if not free_slots and not active:
+            for item in items:
+                if item["kind"] == "busy":
+                    st.markdown(
+                        f'<div class="slot-card slot-busy">{item["time"]}<br>Foglalt</div>',
+                        unsafe_allow_html=True,
+                    )
+                elif st.button(item["time"], key=f"free_{day}_{item['time']}", type="primary", use_container_width=True):
+                    selected = (day, item["time"])
+            if not items:
                 st.markdown('<div class="slot-card slot-closed">Nincs megfelelő sáv</div>', unsafe_allow_html=True)
     return selected
 
@@ -247,6 +287,7 @@ def booking_dialog(service, selected_date, selected_time):
             breed = st.text_input("Fajta")
             note = st.text_area("Megjegyzés")
         privacy = st.checkbox("Elfogadom az adatkezelést. *")
+        newsletter = st.checkbox("Szeretnék hírlevelet és akciós értesítéseket kapni.", value=False)
         submit = st.form_submit_button("Foglalás elküldése", type="primary", use_container_width=True)
     if not submit:
         return
@@ -267,6 +308,8 @@ def booking_dialog(service, selected_date, selected_time):
         dog_payload = {
             "customer_name": owner, "customer_phone": phone, "customer_email": email,
             "breed": breed or None, "notes": note or None,
+            "newsletter_consent": newsletter,
+            "newsletter_consent_at": datetime.now(TZ).isoformat() if newsletter else None,
         }
         if found:
             dog_id = found[0]["id"]
@@ -285,10 +328,14 @@ def booking_dialog(service, selected_date, selected_time):
     st.success(f"Foglalás rögzítve: {selected_date} {selected_time}")
     if not email_ok:
         st.warning("A foglalás sikerült, de a visszaigazoló e-mail nem ment el.")
+    st.session_state["flash_message"] = f"Foglalás rögzítve: {selected_date} {selected_time}"
+    st.rerun()
 
 
 def public_page():
     st.title("🐶 Kutyakozmetika Miskolc")
+    if st.session_state.pop("flash_message", None):
+        st.success("A foglalás sikeresen rögzítve és a naptár frissítve.")
     service = st.selectbox(
         "1. Válassz szolgáltatást",
         list(SERVICES), index=None, placeholder="Szolgáltatás kiválasztása",
@@ -396,7 +443,8 @@ def edit_booking_dialog(booking_id):
                     "customer_phone": phone.strip(), "customer_email": email.strip().lower(),
                 }).eq("id", booking["dog_id"]).execute()
             clear_public_cache()
-        st.success("A módosítások elmentve.")
+        st.session_state["admin_flash"] = "A módosítások elmentve, a naptár frissítve."
+        st.rerun()
     if mail_col.button("Visszaigazolás újraküldése", use_container_width=True):
         current = load_booking(booking_id)
         with st.spinner("E-mail küldése...", show_time=True):
@@ -433,28 +481,100 @@ def admin_calendar_fragment():
             )
             if not day_schedule.get("open"):
                 st.markdown('<div class="slot-card slot-closed">Zárva</div>', unsafe_allow_html=True)
-            for booking in bookings:
-                color = (
-                    STATUS_COLORS.get(booking["status"], "#64748b")
-                    if color_mode == "Státusz szerint"
-                    else SERVICE_COLORS.get(booking["service"], "#64748b")
-                )
+                continue
+            free, _ = available_slots_from_bundle(day, 30, bundle, admin=True)
+            calendar_items = ([{"time": slot, "kind": "free"} for slot in free] +
+                              [{"time": str(item["booking_time"])[:5], "kind": "booking", "booking": item} for item in bookings])
+            calendar_items.sort(key=lambda item: item["time"])
+            for item in calendar_items:
+                if item["kind"] == "free":
+                    st.markdown(f'<div class="slot-card slot-free">{item["time"]} Szabad</div>', unsafe_allow_html=True)
+                    continue
+                booking = item["booking"]
+                color = (STATUS_COLORS.get(booking["status"], "#64748b")
+                         if color_mode == "Státusz szerint"
+                         else SERVICE_COLORS.get(booking["service"], "#64748b"))
                 st.markdown(
                     f'<div class="slot-card" style="background:{color};color:white">'
-                    f'{str(booking["booking_time"])[:5]} {booking["customer_name"]}<br>'
-                    f'{booking["service"]}</div>', unsafe_allow_html=True,
+                    f'{item["time"]} {booking["customer_name"]}<br>{booking["service"]}</div>',
+                    unsafe_allow_html=True,
                 )
                 if st.button("Szerkesztés", key=f"edit_{booking['id']}", use_container_width=True):
                     edit_booking_dialog(booking["id"])
-            free, _ = available_slots_from_bundle(day, 30, bundle, admin=True)
-            for slot in free:
-                st.markdown(f'<div class="slot-card slot-free">{slot} Szabad</div>', unsafe_allow_html=True)
 
+
+def load_contacts():
+    return DB.table("dogs").select("id,name,breed,customer_name,customer_phone,customer_email,notes,newsletter_consent,newsletter_consent_at").order("customer_name").execute().data or []
+
+
+def contact_database_admin():
+    st.subheader("Gazdi- és kutyaadatbázis")
+    rows = load_contacts()
+    search = st.text_input("Keresés gazdi, kutya, e-mail, telefon vagy fajta alapján")
+    if search:
+        needle = search.casefold()
+        rows = [row for row in rows if needle in " ".join(str(row.get(key) or "") for key in ("customer_name","name","customer_email","customer_phone","breed")).casefold()]
+    owners = {}
+    for row in rows:
+        key = (row.get("customer_email") or "", row.get("customer_name") or "")
+        owners.setdefault(key, []).append(row)
+    st.caption(f"Gazdik: {len(owners)} | Kutyák: {len(rows)}")
+    for (email, owner_name), dogs in owners.items():
+        consent = any(bool(dog.get("newsletter_consent")) for dog in dogs)
+        with st.expander(f"{owner_name} | {email} | {len(dogs)} kutya | Hírlevél: {'igen' if consent else 'nem'}"):
+            st.write("Telefon:", dogs[0].get("customer_phone") or "")
+            for dog in dogs:
+                st.markdown(f"**{dog.get('name','')}** | {dog.get('breed') or 'ismeretlen fajta'}")
+                if dog.get("notes"):
+                    st.caption(dog["notes"])
+            st.session_state.setdefault("selected_contact_email", email)
+            if st.button("Levél írása", key=f"mail_owner_{email}"):
+                st.session_state.selected_contact_email = email
+                st.session_state.selected_contact_name = owner_name
+
+    st.divider()
+    st.subheader("Egyedi levél")
+    recipient = st.text_input("Címzett", value=st.session_state.get("selected_contact_email", ""))
+    subject = st.text_input("Tárgy", key="single_subject")
+    body = st.text_area("Üzenet", height=180, key="single_body")
+    if st.button("Egyedi levél elküldése", type="primary", disabled=not(recipient and subject and body)):
+        with st.spinner("Levél küldése...", show_time=True):
+            ok, error = send_custom_email(recipient, subject, body, "manual")
+        st.success("A levél elküldve.") if ok else st.error(f"Küldési hiba: {error}")
+
+    st.divider()
+    st.subheader("Hírlevél küldése")
+    subscribers = {}
+    for row in load_contacts():
+        if row.get("newsletter_consent") and row.get("customer_email"):
+            subscribers[row["customer_email"].lower()] = row.get("customer_name") or "Gazdi"
+    st.info(f"Kifejezetten hozzájárult, egyedi címzettek száma: {len(subscribers)}")
+    newsletter_subject = st.text_input("Hírlevél tárgya")
+    newsletter_body = st.text_area("Hírlevél szövege", height=220)
+    confirm_bulk = st.checkbox(f"Megerősítem, hogy a hírlevelet {len(subscribers)} hozzájárult címzettnek elküldöm.")
+    bulk_ready = bool(subscribers) and bool(newsletter_subject.strip()) and bool(newsletter_body.strip()) and confirm_bulk
+    if st.button("Hírlevél kiküldése mindenkinek", type="primary", disabled=not bulk_ready):
+        successes = 0
+        failures = []
+        progress = st.progress(0, text="Hírlevél küldése...")
+        for index, (subscriber_email, subscriber_name) in enumerate(subscribers.items(), start=1):
+            personalized = newsletter_body.replace("{{nev}}", subscriber_name)
+            ok, error = send_custom_email(subscriber_email, newsletter_subject, personalized, "newsletter")
+            if ok:
+                successes += 1
+            else:
+                failures.append(f"{subscriber_email}: {error}")
+            progress.progress(index / len(subscribers), text=f"Küldés: {index}/{len(subscribers)}")
+        st.success(f"Hírlevélküldés befejezve. Sikeres: {successes}; hibás: {len(failures)}")
+        if failures:
+            st.error("\n".join(failures[:20]))
 
 def admin_page():
     st.title("🔒 Adminnaptár")
     if not admin_authenticated():
         return
+    if st.session_state.pop("admin_flash", None):
+        st.success("A módosítások elmentve, a naptár frissítve.")
     logout_col, refresh_col = st.columns(2)
     if logout_col.button("Kijelentkezés", use_container_width=True):
         st.session_state.admin_authenticated = False
@@ -462,7 +582,11 @@ def admin_page():
     if refresh_col.button("Naptár frissítése", use_container_width=True):
         clear_public_cache()
         st.rerun()
-    admin_calendar_fragment()
+    calendar_tab, contacts_tab = st.tabs(["Heti naptár", "Gazdik és kutyák / levelezés"])
+    with calendar_tab:
+        admin_calendar_fragment()
+    with contacts_tab:
+        contact_database_admin()
 
 
 if st.query_params.get("admin", "0") == "1":

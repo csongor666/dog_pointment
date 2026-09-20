@@ -15,3 +15,10 @@ Felhasználói és admin heti naptár, színezett sávok, kapacitás és közvet
 - Adminnaptár fragmentként fut, így a szerkesztési kattintás nem építi újra a teljes appot.
 - A szerkesztő azonnal valódi párbeszédablakban nyílik meg.
 - A szabad időpontok zöld háttérrel, a foglaltak sárga, a nem foglalhatók szürke háttérrel jelennek meg.
+
+
+## V5.2
+- A szabad és foglalt elemek minden nap időrendben jelennek meg.
+- Foglalás és adminmódosítás után automatikus újrarajzolás történik.
+- Gazdi- és kutyaadatbázis, egyedi levél és hozzájárulás-alapú hírlevélküldés.
+- Futtasd a supabase_v5_2_migration.sql fájlt.
