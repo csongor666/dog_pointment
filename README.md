@@ -22,3 +22,10 @@ Felhasználói és admin heti naptár, színezett sávok, kapacitás és közvet
 - Foglalás és adminmódosítás után automatikus újrarajzolás történik.
 - Gazdi- és kutyaadatbázis, egyedi levél és hozzájárulás-alapú hírlevélküldés.
 - Futtasd a supabase_v5_2_migration.sql fájlt.
+
+
+## V5.3 leiratkozás
+- Minden hírlevél egyedi HMAC-aláírt leiratkozási linket kap.
+- A leiratkozás bejelentkezés nélkül, azonnal kikapcsolja a marketing hozzájárulást.
+- A foglalási és emlékeztető leveleket nem kapcsolja ki.
+- Futtasd a supabase_v5_3_migration.sql fájlt, majd állítsd be a PUBLIC_APP_URL és UNSUBSCRIBE_SECRET értékeket.

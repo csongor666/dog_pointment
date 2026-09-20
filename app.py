@@ -1,6 +1,8 @@
 import hmac
 import re
 import smtplib
+import hashlib
+import urllib.parse
 from email.message import EmailMessage
 from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
@@ -208,6 +210,35 @@ def week_navigation(key):
     return st.session_state[key]
 
 
+def unsubscribe_token(email):
+    secret_key = str(secret("UNSUBSCRIBE_SECRET", "")).encode("utf-8")
+    normalized = email.strip().lower().encode("utf-8")
+    if not secret_key:
+        raise RuntimeError("Az UNSUBSCRIBE_SECRET nincs beállítva.")
+    return hmac.new(secret_key, normalized, hashlib.sha256).hexdigest()
+
+
+def unsubscribe_url(email):
+    base_url = str(secret("PUBLIC_APP_URL", "")).rstrip("/")
+    if not base_url:
+        raise RuntimeError("A PUBLIC_APP_URL nincs beállítva.")
+    return (
+        f"{base_url}/?unsubscribe={urllib.parse.quote(email.strip().lower())}"
+        f"&token={unsubscribe_token(email)}"
+    )
+
+
+def append_unsubscribe_footer(body, recipient):
+    link = unsubscribe_url(recipient)
+    return (
+        body.rstrip()
+        + "\n\n----------------------------------------\n"
+        + "Ezt az üzenetet azért kaptad, mert hozzájárultál a hírlevélhez.\n"
+        + "Leiratkozás egy kattintással:\n"
+        + link
+        + "\n\nA leiratkozás díjmentes, és azonnal érvénybe lép."
+    )
+
 def send_custom_email(recipient, subject, body, email_type="manual", booking_id=None):
     message = EmailMessage()
     message["From"] = secret("GMAIL_ADDRESS")
@@ -330,6 +361,43 @@ def booking_dialog(service, selected_date, selected_time):
         st.warning("A foglalás sikerült, de a visszaigazoló e-mail nem ment el.")
     st.session_state["flash_message"] = f"Foglalás rögzítve: {selected_date} {selected_time}"
     st.rerun()
+
+
+def process_unsubscribe_page():
+    email = str(st.query_params.get("unsubscribe", "")).strip().lower()
+    supplied_token = str(st.query_params.get("token", "")).strip()
+    st.title("Hírlevél leiratkozás")
+    if not email or not supplied_token:
+        st.error("A leiratkozási link hiányos.")
+        return
+    try:
+        expected_token = unsubscribe_token(email)
+    except Exception as exc:
+        st.error(f"A leiratkozás nincs megfelelően konfigurálva: {exc}")
+        return
+    if not hmac.compare_digest(supplied_token, expected_token):
+        st.error("Érvénytelen vagy módosított leiratkozási link.")
+        return
+    with st.spinner("Leiratkozás feldolgozása...", show_time=True):
+        matching = DB.table("dogs").select("id,newsletter_consent").eq("customer_email", email).execute().data or []
+        if not matching:
+            st.info("Ehhez az e-mail-címhez nem található aktív hírlevél-feliratkozás.")
+            return
+        DB.table("dogs").update({
+            "newsletter_consent": False,
+            "newsletter_unsubscribed_at": datetime.now(TZ).isoformat(),
+        }).eq("customer_email", email).execute()
+        try:
+            DB.table("newsletter_events").insert({
+                "email": email,
+                "event_type": "unsubscribe",
+                "event_time": datetime.now(TZ).isoformat(),
+                "source": "email_link",
+            }).execute()
+        except Exception:
+            pass
+    st.success("Sikeresen leiratkoztál a hírlevélről.")
+    st.info("A foglalási és időpont-emlékeztető e-maileket ez nem érinti.")
 
 
 def public_page():
@@ -544,6 +612,7 @@ def contact_database_admin():
 
     st.divider()
     st.subheader("Hírlevél küldése")
+    st.caption("Minden hírlevél végére automatikusan egyedi, egykattintásos leiratkozási link kerül.")
     subscribers = {}
     for row in load_contacts():
         if row.get("newsletter_consent") and row.get("customer_email"):
@@ -559,6 +628,12 @@ def contact_database_admin():
         progress = st.progress(0, text="Hírlevél küldése...")
         for index, (subscriber_email, subscriber_name) in enumerate(subscribers.items(), start=1):
             personalized = newsletter_body.replace("{{nev}}", subscriber_name)
+            try:
+                personalized = append_unsubscribe_footer(personalized, subscriber_email)
+            except Exception as exc:
+                failures.append(f"{subscriber_email}: leiratkozási link hiba: {exc}")
+                progress.progress(index / len(subscribers), text=f"Küldés: {index}/{len(subscribers)}")
+                continue
             ok, error = send_custom_email(subscriber_email, newsletter_subject, personalized, "newsletter")
             if ok:
                 successes += 1
@@ -589,7 +664,9 @@ def admin_page():
         contact_database_admin()
 
 
-if st.query_params.get("admin", "0") == "1":
+if st.query_params.get("unsubscribe"):
+    process_unsubscribe_page()
+elif st.query_params.get("admin", "0") == "1":
     admin_page()
 else:
     public_page()
