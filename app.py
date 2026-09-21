@@ -10,6 +10,7 @@ from zoneinfo import ZoneInfo
 import streamlit as st
 from db import get_db
 from email_service import send_confirmation
+from cancellation import append_cancellation_footer, verify_cancellation_token
 
 st.set_page_config(page_title="Kutyakozmetika Miskolc", page_icon="🐶", layout="wide")
 DB = get_db()
@@ -363,6 +364,53 @@ def booking_dialog(service, selected_date, selected_time):
     st.rerun()
 
 
+def process_booking_cancellation_page():
+    booking_id = str(st.query_params.get("cancel_booking", "")).strip()
+    email = str(st.query_params.get("email", "")).strip().lower()
+    supplied_token = str(st.query_params.get("token", "")).strip()
+    st.title("Foglalás lemondása")
+    if not booking_id or not email or not supplied_token:
+        st.error("A lemondási link hiányos.")
+        return
+    try:
+        valid = verify_cancellation_token(booking_id, email, supplied_token)
+    except Exception as exc:
+        st.error(f"A lemondás nincs megfelelően konfigurálva: {exc}")
+        return
+    if not valid:
+        st.error("Érvénytelen vagy módosított lemondási link.")
+        return
+    rows = (
+        DB.table("bookings")
+        .select("id,booking_date,booking_time,service,status,customer_name,email")
+        .eq("id", booking_id).eq("email", email).limit(1).execute().data or []
+    )
+    if not rows:
+        st.error("A foglalás nem található.")
+        return
+    booking = rows[0]
+    st.info(
+        f"Foglalás: {booking['booking_date']} {str(booking['booking_time'])[:5]} | "
+        f"{booking['service']}"
+    )
+    if booking.get("status") == "cancelled":
+        st.success("Ezt a foglalást már korábban lemondták.")
+        return
+    if booking.get("status") != "active":
+        st.warning("Ez a foglalás már nem aktív, ezért nem módosítható ezen a linken.")
+        return
+    st.warning("A lemondás végleges. A felszabaduló időpontot más vendég azonnal lefoglalhatja.")
+    if st.button("Igen, lemondom a foglalást", type="primary", use_container_width=True):
+        with st.spinner("Foglalás lemondása...", show_time=True):
+            DB.table("bookings").update({
+                "status": "cancelled",
+                "cancelled_at": datetime.now(TZ).isoformat(),
+                "updated_at": datetime.now(TZ).isoformat(),
+            }).eq("id", booking_id).eq("status", "active").execute()
+            clear_public_cache()
+        st.success("A foglalást sikeresen lemondtad. Az időpont felszabadult.")
+
+
 def process_unsubscribe_page():
     email = str(st.query_params.get("unsubscribe", "")).strip().lower()
     supplied_token = str(st.query_params.get("token", "")).strip()
@@ -571,52 +619,203 @@ def admin_calendar_fragment():
                     edit_booking_dialog(booking["id"])
 
 
+def normalize_email(value):
+    return (value or "").strip().lower()
+
+
+def normalize_phone(value):
+    return re.sub(r"[^0-9+]", "", value or "")
+
+
+def contact_key(row):
+    email = normalize_email(row.get("customer_email"))
+    phone = normalize_phone(row.get("customer_phone"))
+    return email or f"phone:{phone}"
+
+
 def load_contacts():
-    return DB.table("dogs").select("id,name,breed,customer_name,customer_phone,customer_email,notes,newsletter_consent,newsletter_consent_at").order("customer_name").execute().data or []
+    return (
+        DB.table("dogs")
+        .select("id,name,breed,customer_name,customer_phone,customer_email,notes,newsletter_consent,newsletter_consent_at,newsletter_unsubscribed_at")
+        .order("customer_name")
+        .execute().data or []
+    )
+
+
+def load_owner_bookings(email, phone):
+    query = DB.table("bookings").select("id,booking_date,booking_time,service,status,customer_name,phone,email,dog_id")
+    if email:
+        return query.eq("email", email).order("booking_date", desc=True).execute().data or []
+    if phone:
+        return query.eq("phone", phone).order("booking_date", desc=True).execute().data or []
+    return []
+
+
+def latest_active_booking(bookings):
+    today_iso = datetime.now(TZ).date().isoformat()
+    active = [
+        item for item in bookings
+        if item.get("status") == "active" and item.get("booking_date", "") >= today_iso
+    ]
+    active.sort(key=lambda item: (item.get("booking_date", ""), str(item.get("booking_time", ""))))
+    return active[0] if active else None
+
+
+def owner_greeting(owner_name):
+    first_name = (owner_name or "Gazdi").split()[0]
+    return f"Kedves {first_name}!"
+
+
+def booking_template(owner_name, booking, template_type):
+    greeting = owner_greeting(owner_name)
+    date_text = booking.get("booking_date", "")
+    time_text = str(booking.get("booking_time", ""))[:5]
+    service = booking.get("service", "")
+    if template_type == "confirmation":
+        subject = "Foglalás visszaigazolása"
+        body = f"{greeting}\n\nEzúton visszaigazoljuk a foglalásodat.\n\nIdőpont: {date_text} {time_text}\nSzolgáltatás: {service}\n\nSzeretettel várunk!\nKutyakozmetika Miskolc"
+    else:
+        subject = "Emlékeztető a kutyakozmetikai időpontról"
+        body = f"{greeting}\n\nEmlékeztetünk a közelgő időpontodra.\n\nIdőpont: {date_text} {time_text}\nSzolgáltatás: {service}\n\nHa nem tudsz eljönni, kérjük, jelezd időben.\nKutyakozmetika Miskolc"
+    body = append_cancellation_footer(body, booking)
+    return subject, body
+
+
+@st.dialog("Levél küldése a gazdinak", width="large")
+def owner_email_dialog(owner_name, recipient):
+    greeting = owner_greeting(owner_name)
+    subject = st.text_input("Tárgy", value="Üzenet a Kutyakozmetika Miskolctól")
+    intro = st.selectbox("Alap köszönés", [greeting, "Kedves Gazdi!", "Tisztelt Ügyfelünk!", "Egyedi köszönés"])
+    custom_intro = st.text_input("Egyedi köszönés", value=greeting, disabled=intro != "Egyedi köszönés")
+    message = st.text_area("Szerkeszthető üzenet", height=220, placeholder="Írd ide az üzenetet...")
+    closing = st.text_area("Elköszönés", value="Üdvözlettel,\nKutyakozmetika Miskolc", height=90)
+    if st.button("Levél elküldése", type="primary", use_container_width=True, disabled=not(subject.strip() and message.strip())):
+        salutation = custom_intro if intro == "Egyedi köszönés" else intro
+        body = f"{salutation}\n\n{message.strip()}\n\n{closing.strip()}"
+        with st.spinner("Levél küldése...", show_time=True):
+            ok, error = send_custom_email(recipient, subject.strip(), body, "manual")
+        st.success("A levél elküldve.") if ok else st.error(f"Küldési hiba: {error}")
+
+
+@st.dialog("Foglalási művelet", width="large")
+def booking_action_dialog(owner_name, recipient, booking, action):
+    if not booking:
+        st.error("A gazdinak nincs aktív foglalása.")
+        return
+    template_type = "confirmation" if action == "confirmation" else "reminder"
+    subject, body = booking_template(owner_name, booking, template_type)
+    st.text_input("Tárgy", value=subject, disabled=True)
+    st.text_area("Sablon szöveg", value=body, height=260, disabled=True)
+    label = "Visszaigazolás elküldése" if action == "confirmation" else "Emlékeztető elküldése"
+    if st.button(label, type="primary", use_container_width=True):
+        with st.spinner("E-mail küldése...", show_time=True):
+            ok, error = send_custom_email(recipient, subject, body, template_type, booking.get("id"))
+            if ok:
+                field = "confirmation_sent_at" if action == "confirmation" else "reminder_sent_at"
+                DB.table("bookings").update({field: datetime.now(TZ).isoformat(), "last_email_error": None}).eq("id", booking["id"]).execute()
+        st.success("Az e-mail elküldve.") if ok else st.error(f"Küldési hiba: {error}")
+
+
+@st.dialog("Foglalás törlése", width="small")
+def delete_booking_dialog(owner_name, booking):
+    if not booking:
+        st.error("A gazdinak nincs aktív foglalása.")
+        return
+    st.warning(f"Törlöd ezt a foglalást?\n\n{owner_name} | {booking['booking_date']} {str(booking['booking_time'])[:5]} | {booking['service']}")
+    if st.button("Igen, foglalás törlése", type="primary", use_container_width=True):
+        DB.table("bookings").update({"status": "cancelled", "updated_at": datetime.now(TZ).isoformat()}).eq("id", booking["id"]).execute()
+        clear_public_cache()
+        st.session_state["admin_flash"] = "A foglalás lemondva, az időpont felszabadult."
+        st.rerun()
+
+
+def duplicate_groups(rows):
+    grouped = {}
+    for row in rows:
+        grouped.setdefault(contact_key(row), []).append(row)
+    return {key: values for key, values in grouped.items() if key and len(values) > 1}
+
+
+def duplicate_admin(rows):
+    st.subheader("Duplikátumkezelés")
+    groups = duplicate_groups(rows)
+    exact_duplicates = []
+    for key, values in groups.items():
+        seen = {}
+        for row in values:
+            dog_key = (str(row.get("name") or "").strip().casefold(), str(row.get("breed") or "").strip().casefold())
+            seen.setdefault(dog_key, []).append(row)
+        for dog_key, duplicates in seen.items():
+            if dog_key[0] and len(duplicates) > 1:
+                exact_duplicates.append((key, dog_key, duplicates))
+    st.caption(f"Azonos gazdielérhetőséggel rendelkező csoportok: {len(groups)} | Valószínű duplikált kutyarekordok: {len(exact_duplicates)}")
+    if not exact_duplicates:
+        st.success("Nem található automatikusan egyesíthető duplikált kutyarekord.")
+        return
+    for index, (owner_key, dog_key, duplicates) in enumerate(exact_duplicates):
+        with st.expander(f"{duplicates[0].get('customer_name','')} | {duplicates[0].get('name','')} | {len(duplicates)} rekord"):
+            st.write("Rekordazonosítók:", ", ".join(item["id"] for item in duplicates))
+            keep_options = {f"{item['id']} | {item.get('name','')} | {item.get('breed') or ''}": item["id"] for item in duplicates}
+            keep_label = st.selectbox("Megtartandó rekord", list(keep_options), key=f"keep_duplicate_{index}")
+            if st.button("Duplikátumok egyesítése", key=f"merge_duplicate_{index}", type="primary"):
+                keep_id = keep_options[keep_label]
+                remove_ids = [item["id"] for item in duplicates if item["id"] != keep_id]
+                with st.spinner("Duplikátumok egyesítése...", show_time=True):
+                    DB.rpc("merge_duplicate_dogs", {"keep_dog_id": keep_id, "remove_dog_ids": remove_ids}).execute()
+                st.success("A duplikált rekordok egyesítve.")
+                st.rerun()
 
 
 def contact_database_admin():
     st.subheader("Gazdi- és kutyaadatbázis")
-    rows = load_contacts()
+    all_rows = load_contacts()
     search = st.text_input("Keresés gazdi, kutya, e-mail, telefon vagy fajta alapján")
+    rows = all_rows
     if search:
         needle = search.casefold()
-        rows = [row for row in rows if needle in " ".join(str(row.get(key) or "") for key in ("customer_name","name","customer_email","customer_phone","breed")).casefold()]
+        rows = [row for row in rows if needle in " ".join(str(row.get(key) or "") for key in ("customer_name", "name", "customer_email", "customer_phone", "breed")).casefold()]
     owners = {}
     for row in rows:
-        key = (row.get("customer_email") or "", row.get("customer_name") or "")
-        owners.setdefault(key, []).append(row)
-    st.caption(f"Gazdik: {len(owners)} | Kutyák: {len(rows)}")
-    for (email, owner_name), dogs in owners.items():
+        owners.setdefault(contact_key(row), []).append(row)
+    st.caption(f"Egyedi gazdik: {len(owners)} | Kutyák: {len(rows)}")
+
+    for owner_id, dogs in sorted(owners.items(), key=lambda item: str(item[1][0].get("customer_name") or "").casefold()):
+        primary = dogs[0]
+        email = normalize_email(primary.get("customer_email"))
+        phone = primary.get("customer_phone") or ""
+        owner_name = primary.get("customer_name") or "Gazdi"
         consent = any(bool(dog.get("newsletter_consent")) for dog in dogs)
-        with st.expander(f"{owner_name} | {email} | {len(dogs)} kutya | Hírlevél: {'igen' if consent else 'nem'}"):
-            st.write("Telefon:", dogs[0].get("customer_phone") or "")
-            for dog in dogs:
+        bookings = load_owner_bookings(email, phone)
+        active_booking = latest_active_booking(bookings)
+        with st.expander(f"{owner_name} | {email or phone} | {len(dogs)} kutya | Aktív foglalás: {'igen' if active_booking else 'nem'} | Hírlevél: {'igen' if consent else 'nem'}"):
+            st.write(f"Telefon: {phone}")
+            for dog in sorted(dogs, key=lambda item: str(item.get("name") or "").casefold()):
                 st.markdown(f"**{dog.get('name','')}** | {dog.get('breed') or 'ismeretlen fajta'}")
                 if dog.get("notes"):
                     st.caption(dog["notes"])
-            st.session_state.setdefault("selected_contact_email", email)
-            if st.button("Levél írása", key=f"mail_owner_{email}"):
-                st.session_state.selected_contact_email = email
-                st.session_state.selected_contact_name = owner_name
+            if active_booking:
+                st.info(f"Következő aktív foglalás: {active_booking['booking_date']} {str(active_booking['booking_time'])[:5]} | {active_booking['service']}")
+            col1, col2, col3, col4 = st.columns(4)
+            if col1.button("E-mail küldése a gazdinak", key=f"owner_mail_{owner_id}", use_container_width=True, disabled=not email):
+                owner_email_dialog(owner_name, email)
+            if col2.button("Visszaigazolás újraküldése", key=f"owner_confirm_{owner_id}", use_container_width=True, disabled=not(email and active_booking)):
+                booking_action_dialog(owner_name, email, active_booking, "confirmation")
+            if col3.button("Emlékeztető küldése", key=f"owner_reminder_{owner_id}", use_container_width=True, disabled=not(email and active_booking)):
+                booking_action_dialog(owner_name, email, active_booking, "reminder")
+            if col4.button("Foglalás törlése", key=f"owner_delete_{owner_id}", use_container_width=True, disabled=not active_booking):
+                delete_booking_dialog(owner_name, active_booking)
 
     st.divider()
-    st.subheader("Egyedi levél")
-    recipient = st.text_input("Címzett", value=st.session_state.get("selected_contact_email", ""))
-    subject = st.text_input("Tárgy", key="single_subject")
-    body = st.text_area("Üzenet", height=180, key="single_body")
-    if st.button("Egyedi levél elküldése", type="primary", disabled=not(recipient and subject and body)):
-        with st.spinner("Levél küldése...", show_time=True):
-            ok, error = send_custom_email(recipient, subject, body, "manual")
-        st.success("A levél elküldve.") if ok else st.error(f"Küldési hiba: {error}")
+    duplicate_admin(all_rows)
 
     st.divider()
     st.subheader("Hírlevél küldése")
     st.caption("Minden hírlevél végére automatikusan egyedi, egykattintásos leiratkozási link kerül.")
     subscribers = {}
-    for row in load_contacts():
-        if row.get("newsletter_consent") and row.get("customer_email"):
-            subscribers[row["customer_email"].lower()] = row.get("customer_name") or "Gazdi"
+    for row in all_rows:
+        email = normalize_email(row.get("customer_email"))
+        if row.get("newsletter_consent") and email:
+            subscribers[email] = row.get("customer_name") or "Gazdi"
     st.info(f"Kifejezetten hozzájárult, egyedi címzettek száma: {len(subscribers)}")
     newsletter_subject = st.text_input("Hírlevél tárgya")
     newsletter_body = st.text_area("Hírlevél szövege", height=220)
@@ -664,7 +863,9 @@ def admin_page():
         contact_database_admin()
 
 
-if st.query_params.get("unsubscribe"):
+if st.query_params.get("cancel_booking"):
+    process_booking_cancellation_page()
+elif st.query_params.get("unsubscribe"):
     process_unsubscribe_page()
 elif st.query_params.get("admin", "0") == "1":
     admin_page()
