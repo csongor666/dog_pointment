@@ -1,35 +1,45 @@
 import hashlib
 import hmac
 import urllib.parse
+
 import streamlit as st
 
 
 def _secret(name, default=""):
     try:
-        return str(st.secrets.get(name, default))
+        return str(st.secrets.get(name, default)).strip()
     except Exception:
-        return str(default)
+        return str(default).strip()
 
 
 def cancellation_token(booking_id, email):
     signing_secret = _secret("CANCELLATION_SECRET").encode("utf-8")
     if not signing_secret:
-        raise RuntimeError("A CANCELLATION_SECRET nincs beállítva.")
-    message = f"{booking_id}|{(email or '').strip().lower()}".encode("utf-8")
+        raise RuntimeError("A CANCELLATION_SECRET nincs beállítva a Streamlit Secrets között.")
+    normalized_email = (email or "").strip().lower()
+    if not normalized_email:
+        raise RuntimeError("A foglaláshoz nem tartozik e-mail-cím.")
+    message = f"{booking_id}|{normalized_email}".encode("utf-8")
     return hmac.new(signing_secret, message, hashlib.sha256).hexdigest()
 
 
 def cancellation_url(booking):
     base_url = _secret("PUBLIC_APP_URL").rstrip("/")
     if not base_url:
-        raise RuntimeError("A PUBLIC_APP_URL nincs beállítva.")
-    booking_id = str(booking["id"])
+        raise RuntimeError("A PUBLIC_APP_URL nincs beállítva a Streamlit Secrets között.")
+    if not base_url.startswith("https://"):
+        raise RuntimeError("A PUBLIC_APP_URL értékének https:// címmel kell kezdődnie.")
+    booking_id = str(booking.get("id") or "").strip()
+    if not booking_id:
+        raise RuntimeError("A foglalás azonosítója hiányzik.")
     email = (booking.get("email") or "").strip().lower()
     token = cancellation_token(booking_id, email)
-    return (
-        f"{base_url}/?cancel_booking={urllib.parse.quote(booking_id)}"
-        f"&email={urllib.parse.quote(email)}&token={token}"
-    )
+    query = urllib.parse.urlencode({
+        "cancel_booking": booking_id,
+        "email": email,
+        "token": token,
+    })
+    return f"{base_url}/?{query}"
 
 
 def verify_cancellation_token(booking_id, email, supplied_token):
@@ -38,11 +48,11 @@ def verify_cancellation_token(booking_id, email, supplied_token):
 
 
 def append_cancellation_footer(body, booking):
-    link = cancellation_url(booking)
     return (
         body.rstrip()
-        + "\n\n----------------------------------------\n"
-        + "Ha mégsem tudsz eljönni, az alábbi biztonságos linken lemondhatod a foglalást:\n"
-        + link
+        + "\n\n========================================\n"
+        + "FOGLALÁS LEMONDÁSA\n"
+        + "Ha mégsem tudsz eljönni, az alábbi biztonságos linken lemondhatod a foglalást:\n\n"
+        + cancellation_url(booking)
         + "\n\nA lemondás után az időpont azonnal újra foglalhatóvá válik."
     )
