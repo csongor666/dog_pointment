@@ -1,8 +1,8 @@
-import html
 import hmac
 import re
 import smtplib
 import hashlib
+import html
 import urllib.parse
 from email.message import EmailMessage
 from datetime import date, datetime, time, timedelta
@@ -54,7 +54,14 @@ st.markdown(
     .slot-free { background:#22c55e; color:white; }
     .slot-busy { background:#eab308; color:#422006; }
     .slot-closed { background:#9ca3af; color:white; }
-    .day-head { text-align:center; font-weight:700; padding:8px 3px; background:#f1f5f9; border-radius:8px; margin-bottom:4px; }
+    .day-head { text-align:center; font-weight:700; padding:8px 3px; background:#f1f5f9; border-radius:8px; margin-bottom:4px; min-height:66px; display:flex; align-items:center; justify-content:center; }
+    .admin-calendar-grid { display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); gap:8px; align-items:stretch; }
+    .admin-day-card { border:1px solid #dbe3ec; border-radius:10px; background:#ffffff; padding:7px; min-height:720px; display:flex; flex-direction:column; }
+    .admin-day-slots { display:flex; flex-direction:column; gap:5px; flex:1; }
+    .admin-slot-card { min-height:54px; padding:7px 5px; border-radius:7px; font-size:.80rem; text-align:center; font-weight:700; display:flex; align-items:center; justify-content:center; line-height:1.2; }
+    .admin-empty-fill { flex:1; min-height:54px; border-radius:7px; background:repeating-linear-gradient(135deg,#f8fafc,#f8fafc 8px,#f1f5f9 8px,#f1f5f9 16px); }
+    @media (max-width: 1000px) { .admin-calendar-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } .admin-day-card { min-height:560px; } }
+    @media (max-width: 650px) { .admin-calendar-grid { grid-template-columns:1fr; } .admin-day-card { min-height:auto; } }
     div[data-testid="stButton"] button[kind="primary"] { background:#22c55e; border-color:#16a34a; color:white; }
     div[data-testid="stButton"] button[kind="primary"]:hover { background:#16a34a; border-color:#15803d; color:white; }
     </style>
@@ -872,28 +879,27 @@ def admin_calendar_fragment():
     color_mode = st.radio(
         "Színezés", ["Státusz szerint", "Szolgáltatás szerint"], horizontal=True
     )
-    if color_mode == "Státusz szerint":
-        legend_items = [
-            (STATUS_COLORS["active"], STATUS["active"]),
-            (STATUS_COLORS["completed"], STATUS["completed"]),
-            (STATUS_COLORS["cancelled"], STATUS["cancelled"]),
-            (STATUS_COLORS["no_show"], STATUS["no_show"]),
-            ("#22c55e", "Szabad"),
-        ]
-    else:
-        legend_items = [
-            (SERVICE_COLORS[service], service)
-            for service in SERVICES
-        ]
-        legend_items.append(("#22c55e", "Szabad"))
-    legend_html = " &nbsp; ".join(
-        f'<span class="legend" style="background:{color}"></span>{html.escape(label)}'
-        for color, label in legend_items
-    )
-    st.markdown(legend_html, unsafe_allow_html=True)
     with st.spinner("Heti naptár frissítése...", show_time=True):
         bundle = load_admin_week(week_start)
-    columns = st.columns(7)
+    columns = st.columns(7, gap="small")
+    # A hét minden naposzlopa azonos minimális magasságot kap.
+    st.markdown(
+        """
+        <style>
+        div[data-testid="stHorizontalBlock"]:has(.day-head) > div[data-testid="stColumn"] {
+            min-height: 760px;
+            border: 1px solid #dbe3ec;
+            border-radius: 10px;
+            padding: 7px;
+            background: #ffffff;
+        }
+        div[data-testid="stHorizontalBlock"]:has(.day-head) > div[data-testid="stColumn"] > div {
+            height: 100%;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
     for day_index, day_column in enumerate(columns):
         day = week_start + timedelta(days=day_index)
         with day_column:
@@ -955,6 +961,8 @@ def admin_calendar_fragment():
                     use_container_width=True,
                 ):
                     edit_booking_dialog(booking["id"])
+            # Az üres alsó terület kitölti a rövidebb naposzlopokat.
+            st.markdown('<div class="admin-empty-fill"></div>', unsafe_allow_html=True)
 
 
 def normalize_email(value):
