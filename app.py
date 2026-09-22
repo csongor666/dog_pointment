@@ -81,9 +81,9 @@ st.markdown(
         background:repeating-linear-gradient(
             to bottom,
             transparent 0,
-            transparent 42px,
-            rgba(148,163,184,.22) 42px,
-            rgba(148,163,184,.22) 43px
+            transparent 41px,
+            rgba(148,163,184,.22) 41px,
+            rgba(148,163,184,.22) 42px
         );
     }
     div[data-testid="stHorizontalBlock"]:has(.admin-timeline-head)::after {
@@ -98,9 +98,9 @@ st.markdown(
         background:repeating-linear-gradient(
             to bottom,
             transparent 0,
-            transparent 84px,
-            rgba(107,114,128,.38) 84px,
-            rgba(107,114,128,.38) 86px
+            transparent 82px,
+            rgba(107,114,128,.38) 82px,
+            rgba(107,114,128,.38) 84px
         );
     }
     .admin-time-axis-head {
@@ -1134,7 +1134,7 @@ def admin_calendar_fragment():
         time_labels = []
         label_minute = timeline_start
         while label_minute <= timeline_end:
-            label_top = round((label_minute - timeline_start) / 30 * 43)
+            label_top = round((label_minute - timeline_start) / 30 * 42)
             time_labels.append(
                 f'<span class="admin-time-label" style="top:{label_top}px">'
                 f'{label_minute // 60:02d}:00</span>'
@@ -1161,8 +1161,7 @@ def admin_calendar_fragment():
             percentage = round(100 * used / capacity) if capacity else 0
             st.markdown(
                 f'<div class="day-head admin-timeline-head">'
-                f'{DAY_NAMES[day.weekday()]} {day:%m.%d}<br>'
-                f'{used}/{capacity} perc ({percentage}%)</div>',
+                f'{DAY_NAMES[day.weekday()]} {day:%m.%d}</div>',
                 unsafe_allow_html=True,
             )
 
