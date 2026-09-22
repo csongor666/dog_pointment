@@ -54,7 +54,7 @@ st.markdown(
     .slot-free { background:#22c55e; color:white; }
     .slot-busy { background:#eab308; color:#422006; }
     .slot-closed { background:#9ca3af; color:white; }
-    .day-head { text-align:center; font-weight:700; padding:8px 3px; background:#f1f5f9; border-radius:8px; margin-bottom:4px; min-height:66px; display:flex; align-items:center; justify-content:center; }
+    .day-head { box-sizing:border-box; text-align:center; font-weight:700; padding:8px 3px; background:#f1f5f9; border-radius:8px; margin:0; height:66px; min-height:66px; max-height:66px; display:flex; align-items:center; justify-content:center; }
     .admin-calendar-grid { display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); gap:8px; align-items:stretch; }
     .admin-day-card { border:1px solid #dbe3ec; border-radius:10px; background:#ffffff; padding:7px; min-height:720px; display:flex; flex-direction:column; }
     .admin-day-slots { display:flex; flex-direction:column; gap:5px; flex:1; }
@@ -65,25 +65,25 @@ st.markdown(
     .admin-legend-row { display:flex; flex-wrap:wrap; gap:8px 14px; margin:8px 0 14px 0; }
     .admin-legend-item { display:inline-flex; align-items:center; gap:5px; font-size:.80rem; font-weight:600; }
     .admin-legend-dot { width:14px; height:14px; border-radius:3px; display:inline-block; }
-    .admin-timeline-head { min-height:66px; }
-    .admin-timeline-spacer { width:100%; }
-    .admin-timeline-closed { height:40px; min-height:40px; max-height:40px; margin:1px 0; }
+    .admin-timeline-head { box-sizing:border-box; height:66px; min-height:66px; max-height:66px; margin:0 !important; }
+    .admin-timeline-spacer { box-sizing:border-box; width:100%; margin:0 !important; padding:0 !important; }
+    .admin-timeline-closed { box-sizing:border-box; height:40px; min-height:40px; max-height:40px; margin:0; }
     div[data-testid="stHorizontalBlock"]:has(.admin-timeline-head) { position:relative; overflow:visible; }
     div[data-testid="stHorizontalBlock"]:has(.admin-timeline-head)::before {
         content:"";
         position:absolute;
         left:0;
         right:0;
-        top:75px;
+        top:74px;
         bottom:0;
         pointer-events:none;
         z-index:19;
         background:repeating-linear-gradient(
             to bottom,
             transparent 0,
-            transparent 42px,
-            rgba(148,163,184,.22) 42px,
-            rgba(148,163,184,.22) 43px
+            transparent 39px,
+            rgba(148,163,184,.22) 39px,
+            rgba(148,163,184,.22) 40px
         );
     }
     div[data-testid="stHorizontalBlock"]:has(.admin-timeline-head)::after {
@@ -91,20 +91,24 @@ st.markdown(
         position:absolute;
         left:0;
         right:0;
-        top:75px;
+        top:74px;
         bottom:0;
         pointer-events:none;
         z-index:20;
         background:repeating-linear-gradient(
             to bottom,
             transparent 0,
-            transparent 84px,
-            rgba(107,114,128,.38) 84px,
-            rgba(107,114,128,.38) 86px
+            transparent 78px,
+            rgba(107,114,128,.38) 78px,
+            rgba(107,114,128,.38) 80px
         );
     }
     .admin-time-axis-head {
+        box-sizing:border-box;
+        height:66px;
         min-height:66px;
+        max-height:66px;
+        margin:0;
         display:flex;
         align-items:center;
         justify-content:center;
@@ -146,14 +150,18 @@ st.markdown(
         margin:0 !important;
         padding:0 !important;
     }
-    div[class*="st-key-admin_free_"] { margin:0 !important; padding:0 !important; }
+    div[class*="st-key-admin_free_"] { box-sizing:border-box; margin:0 !important; padding:0 !important; height:40px !important; min-height:40px !important; max-height:40px !important; }
+    div[class*="st-key-admin_free_"] > div { box-sizing:border-box; margin:0 !important; padding:0 !important; height:40px !important; min-height:40px !important; max-height:40px !important; }
     div[class*="st-key-admin_free_"] button {
+        box-sizing:border-box !important;
         height:40px !important; min-height:40px !important; max-height:40px !important;
         margin:0 !important; padding:2px 4px !important;
         white-space:normal !important; line-height:1.1 !important; font-size:.72rem !important;
     }
-    div[class*="st-key-edit_"] { margin:0 !important; padding:0 !important; }
+    div[class*="st-key-edit_"] { box-sizing:border-box; margin:0 !important; padding:0 !important; }
+    div[class*="st-key-edit_"] > div { box-sizing:border-box; margin:0 !important; padding:0 !important; }
     div[class*="st-key-edit_"] button {
+        box-sizing:border-box !important;
         margin:0 !important; padding:3px 5px !important;
         white-space:pre-line !important; overflow-wrap:anywhere !important;
         line-height:1.12 !important; font-size:.70rem !important; overflow:visible !important;
@@ -1134,7 +1142,7 @@ def admin_calendar_fragment():
         time_labels = []
         label_minute = timeline_start
         while label_minute <= timeline_end:
-            label_top = round((label_minute - timeline_start) / 30 * 43 + 43)
+            label_top = round((label_minute - timeline_start) / 30 * cell_height + cell_height)
             time_labels.append(
                 f'<span class="admin-time-label" style="top:{label_top}px">'
                 f'{label_minute // 60:02d}:00</span>'
@@ -1161,8 +1169,7 @@ def admin_calendar_fragment():
             percentage = round(100 * used / capacity) if capacity else 0
             st.markdown(
                 f'<div class="day-head admin-timeline-head">'
-                f'{DAY_NAMES[day.weekday()]} {day:%m.%d}<br>'
-                f'{used}/{capacity} perc ({percentage}%)</div>',
+                f'{DAY_NAMES[day.weekday()]} {day:%m.%d}</div>',
                 unsafe_allow_html=True,
             )
 
