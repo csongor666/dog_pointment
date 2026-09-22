@@ -1,3 +1,4 @@
+import html
 import hmac
 import re
 import smtplib
