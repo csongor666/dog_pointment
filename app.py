@@ -66,41 +66,47 @@ st.markdown(
     .admin-legend-item { display:inline-flex; align-items:center; gap:5px; font-size:.80rem; font-weight:600; }
     .admin-legend-dot { width:14px; height:14px; border-radius:3px; display:inline-block; }
     .admin-timeline-head { min-height:66px; }
-    .admin-timeline-spacer { width:100%; margin:0 !important; padding:0 !important; }
-    .admin-timeline-closed { height:40px; min-height:40px; max-height:40px; margin:0; }
+    .admin-timeline-spacer { width:100%; }
+    .admin-timeline-closed { height:40px; min-height:40px; max-height:40px; margin:1px 0; }
     div[data-testid="stHorizontalBlock"]:has(.admin-timeline-head) { position:relative; overflow:visible; }
-    div[data-testid="stHorizontalBlock"]:has(.admin-timeline-head)::before {
-        content:""; position:absolute; left:0; right:0; top:74px; bottom:0; pointer-events:none; z-index:19;
-        background:repeating-linear-gradient(
-            to bottom,
-            transparent 0,
-            transparent 39px,
-            rgba(148,163,184,.22) 39px,
-            rgba(148,163,184,.22) 40px
-        );
-    }
     div[data-testid="stHorizontalBlock"]:has(.admin-timeline-head)::after {
         content:""; position:absolute; left:0; right:0; top:74px; bottom:0; pointer-events:none; z-index:20;
         background:repeating-linear-gradient(
             to bottom,
             transparent 0,
             transparent 79px,
-            rgba(100,116,139,.58) 79px,
-            rgba(100,116,139,.58) 80px
+            rgba(100,116,139,.48) 79px,
+            rgba(100,116,139,.48) 80px
         );
     }
     div[data-testid="stHorizontalBlock"]:has(.admin-timeline-head) > div[data-testid="stColumn"] {
         position:relative; z-index:1;
     }
-    div[class*="st-key-admin_free_"] { margin:0 !important; padding:0 !important; height:40px !important; min-height:40px !important; }
-    div[class*="st-key-admin_free_"] > div { margin:0 !important; padding:0 !important; height:40px !important; min-height:40px !important; }
+    /* Az admin idővonal függőleges Streamlit-konténereinek alapértelmezett hézaga nulla. */
+    div[data-testid="stHorizontalBlock"]:has(.admin-timeline-head)
+    > div[data-testid="stColumn"] div[data-testid="stVerticalBlock"] {
+        gap:0 !important;
+        row-gap:0 !important;
+    }
+    div[data-testid="stHorizontalBlock"]:has(.admin-timeline-head)
+    > div[data-testid="stColumn"] div[data-testid="stElementContainer"] {
+        margin-top:0 !important;
+        margin-bottom:0 !important;
+        padding-top:0 !important;
+        padding-bottom:0 !important;
+    }
+    div[data-testid="stHorizontalBlock"]:has(.admin-timeline-head)
+    > div[data-testid="stColumn"] div[data-testid="stMarkdownContainer"] {
+        margin:0 !important;
+        padding:0 !important;
+    }
+    div[class*="st-key-admin_free_"] { margin:0 !important; padding:0 !important; }
     div[class*="st-key-admin_free_"] button {
         height:40px !important; min-height:40px !important; max-height:40px !important;
         margin:0 !important; padding:2px 4px !important;
         white-space:normal !important; line-height:1.1 !important; font-size:.72rem !important;
     }
     div[class*="st-key-edit_"] { margin:0 !important; padding:0 !important; }
-    div[class*="st-key-edit_"] > div { margin:0 !important; padding:0 !important; }
     div[class*="st-key-edit_"] button {
         margin:0 !important; padding:3px 5px !important;
         white-space:pre-line !important; overflow-wrap:anywhere !important;
@@ -1176,9 +1182,8 @@ def admin_calendar_fragment():
                     owner_name = booking.get("customer_name") or "Névtelen gazdi"
                     dog_name = dog.get("name") or "Nincs kutyanév"
                     label = (
-                        f"{time_text} {owner_name}  \n"
-                        f"{dog_name}  \n"
-                        f"{booking['service']}"
+                        f"{time_text} {owner_name}\n"
+                        f"{dog_name}\n{booking['service']}"
                     )
                     if st.button(
                         label,
