@@ -81,9 +81,9 @@ st.markdown(
         background:repeating-linear-gradient(
             to bottom,
             transparent 0,
-            transparent 40px,
-            rgba(148,163,184,.22) 40px,
-            rgba(148,163,184,.22) 41px
+            transparent 39px,
+            rgba(148,163,184,.22) 39px,
+            rgba(148,163,184,.22) 40px
         );
     }
     div[data-testid="stHorizontalBlock"]:has(.admin-timeline-head)::after {
@@ -98,9 +98,9 @@ st.markdown(
         background:repeating-linear-gradient(
             to bottom,
             transparent 0,
-            transparent 80px,
-            rgba(107,114,128,.38) 80px,
-            rgba(107,114,128,.38) 82px
+            transparent 79px,
+            rgba(107,114,128,.38) 79px,
+            rgba(107,114,128,.38) 80px
         );
     }
     .admin-time-axis-head {
