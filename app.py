@@ -58,8 +58,13 @@ st.markdown(
     .admin-calendar-grid { display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); gap:8px; align-items:stretch; }
     .admin-day-card { border:1px solid #dbe3ec; border-radius:10px; background:#ffffff; padding:7px; min-height:720px; display:flex; flex-direction:column; }
     .admin-day-slots { display:flex; flex-direction:column; gap:5px; flex:1; }
-    .admin-slot-card { min-height:54px; padding:7px 5px; border-radius:7px; font-size:.80rem; text-align:center; font-weight:700; display:flex; align-items:center; justify-content:center; line-height:1.2; }
+    .admin-slot-card { height:58px; min-height:58px; max-height:58px; padding:7px 5px; border-radius:7px; font-size:.80rem; text-align:center; font-weight:700; display:flex; align-items:center; justify-content:center; line-height:1.2; overflow:hidden; }
     .admin-empty-fill { flex:1; min-height:54px; border-radius:7px; background:repeating-linear-gradient(135deg,#f8fafc,#f8fafc 8px,#f1f5f9 8px,#f1f5f9 16px); }
+    .admin-hour-line { height:0; border-top:1px dashed #94a3b8; margin:7px 0 6px 0; position:relative; opacity:.85; }
+    .admin-hour-line span { position:absolute; top:-9px; right:4px; padding:0 4px; background:#fff; color:#64748b; font-size:.65rem; font-weight:700; }
+    .admin-legend-row { display:flex; flex-wrap:wrap; gap:8px 14px; margin:8px 0 14px 0; }
+    .admin-legend-item { display:inline-flex; align-items:center; gap:5px; font-size:.80rem; font-weight:600; }
+    .admin-legend-dot { width:14px; height:14px; border-radius:3px; display:inline-block; }
     @media (max-width: 1000px) { .admin-calendar-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } .admin-day-card { min-height:560px; } }
     @media (max-width: 650px) { .admin-calendar-grid { grid-template-columns:1fr; } .admin-day-card { min-height:auto; } }
     div[data-testid="stButton"] button[kind="primary"] { background:#22c55e; border-color:#16a34a; color:white; }
@@ -123,7 +128,7 @@ def load_admin_week(week_start):
     start_iso, end_iso = daterange_key(week_start)
     booking_rows = (
         DB.table("bookings")
-        .select("id,booking_date,booking_time,duration_min,service,status,customer_name,phone,email,dog_id,confirmation_sent_at,last_email_error")
+        .select("id,booking_date,booking_time,duration_min,service,status,customer_name,phone,email,dog_id,confirmation_sent_at,last_email_error,dog:dogs!bookings_dog_id_fkey(name)")
         .gte("booking_date", start_iso)
         .lte("booking_date", end_iso)
         .order("booking_date").order("booking_time")
@@ -879,6 +884,17 @@ def admin_calendar_fragment():
     color_mode = st.radio(
         "Színezés", ["Státusz szerint", "Szolgáltatás szerint"], horizontal=True
     )
+    if color_mode == "Státusz szerint":
+        legend_items = [(STATUS_COLORS[key], STATUS[key]) for key in STATUS]
+    else:
+        legend_items = [(SERVICE_COLORS[service], service) for service in SERVICES]
+    legend_items.append(("#22c55e", "Szabad"))
+    legend_html = "".join(
+        f'<span class="admin-legend-item"><span class="admin-legend-dot" '
+        f'style="background:{color}"></span>{html.escape(label)}</span>'
+        for color, label in legend_items
+    )
+    st.markdown(f'<div class="admin-legend-row">{legend_html}</div>', unsafe_allow_html=True)
     with st.spinner("Heti naptár frissítése...", show_time=True):
         bundle = load_admin_week(week_start)
     columns = st.columns(7, gap="small")
@@ -922,9 +938,20 @@ def admin_calendar_fragment():
             calendar_items = ([{"time": slot, "kind": "free"} for slot in free] +
                               [{"time": str(item["booking_time"])[:5], "kind": "booking", "booking": item} for item in bookings])
             calendar_items.sort(key=lambda item: item["time"])
+            last_hour = None
             for item in calendar_items:
+                item_hour = item["time"][:2]
+                if item_hour != last_hour:
+                    st.markdown(
+                        f'<div class="admin-hour-line"><span>{item_hour}:00</span></div>',
+                        unsafe_allow_html=True,
+                    )
+                    last_hour = item_hour
                 if item["kind"] == "free":
-                    st.markdown(f'<div class="slot-card slot-free">{item["time"]} Szabad</div>', unsafe_allow_html=True)
+                    st.markdown(
+                        f'<div class="admin-slot-card slot-free">{item["time"]} Szabad</div>',
+                        unsafe_allow_html=True,
+                    )
                     continue
                 booking = item["booking"]
                 color = (
@@ -943,6 +970,12 @@ def admin_calendar_fragment():
                     f'border-color:{color} !important;'
                     f'color:white !important;'
                     f'font-weight:700 !important;'
+                    f'height:58px !important;'
+                    f'min-height:58px !important;'
+                    f'max-height:58px !important;'
+                    f'white-space:pre-line !important;'
+                    f'line-height:1.15 !important;'
+                    f'overflow:hidden !important;'
                     f'}}'
                     f'.st-key-{button_key} button:hover {{'
                     f'filter:brightness(0.92);'
@@ -951,9 +984,12 @@ def admin_calendar_fragment():
                     f'</style>',
                     unsafe_allow_html=True,
                 )
+                dog = booking.get("dog") or {}
+                owner_name = booking.get("customer_name") or "Névtelen gazdi"
+                dog_name = dog.get("name") or "Nincs kutyanév"
                 label = (
-                    f"{item['time']} {booking['customer_name']} | "
-                    f"{booking['service']}"
+                    f"{item['time']} {owner_name}\n"
+                    f"{dog_name} | {booking['service']}"
                 )
                 if st.button(
                     label,
