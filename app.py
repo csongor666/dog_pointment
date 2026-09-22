@@ -906,18 +906,32 @@ def admin_calendar_fragment():
                     if color_mode == "Státusz szerint"
                     else SERVICE_COLORS.get(booking["service"], "#64748b")
                 )
-                marker = {
-                    "#eab308": "🟨", "#3b82f6": "🟦", "#64748b": "⬜",
-                    "#dc2626": "🟥", "#2563eb": "🟦", "#7c3aed": "🟪",
-                    "#0891b2": "🔷", "#ea580c": "🟧",
-                }.get(color, "⬜")
+                button_key = f"edit_{booking['id']}"
+                button_css_id = f"admin-slot-{booking['id']}"
+                # A rejtett anchor alapján kizárólag az utána következő szerkesztőgomb kapja a foglalás színét.
+                st.markdown(
+                    f'<span id="{button_css_id}"></span>'
+                    f'<style>'
+                    f'.st-key-{button_key} button {{'
+                    f'background-color:{color} !important;'
+                    f'border-color:{color} !important;'
+                    f'color:white !important;'
+                    f'font-weight:700 !important;'
+                    f'}}'
+                    f'.st-key-{button_key} button:hover {{'
+                    f'filter:brightness(0.92);'
+                    f'border-color:{color} !important;'
+                    f'}}'
+                    f'</style>',
+                    unsafe_allow_html=True,
+                )
                 label = (
-                    f"{marker} {item['time']} {booking['customer_name']} | "
+                    f"{item['time']} {booking['customer_name']} | "
                     f"{booking['service']}"
                 )
                 if st.button(
                     label,
-                    key=f"edit_{booking['id']}",
+                    key=button_key,
                     use_container_width=True,
                 ):
                     edit_booking_dialog(booking["id"])
@@ -1216,7 +1230,10 @@ def owners_admin_section():
             bookings = load_owner_bookings(email, phone)
             st.markdown("**Foglalási előzmények**")
             history = formatted_owner_history(bookings)
-            st.dataframe(history, use_container_width=True, hide_index=True) if history else st.info("Nincs foglalási előzmény.")
+            if history:
+                st.dataframe(history, use_container_width=True, hide_index=True)
+            else:
+                st.info("Nincs foglalási előzmény.")
 
 
 def dogs_admin_section():
@@ -1264,7 +1281,10 @@ def dogs_admin_section():
                 st.rerun()
             st.markdown("**Foglalási előzmények**")
             history = dog_booking_history(dog["id"])
-            st.dataframe(history, use_container_width=True, hide_index=True) if history else st.info("Nincs foglalási előzmény.")
+            if history:
+                st.dataframe(history, use_container_width=True, hide_index=True)
+            else:
+                st.info("Nincs foglalási előzmény.")
 
 
 def newsletter_admin_section():
