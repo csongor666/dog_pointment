@@ -66,42 +66,45 @@ st.markdown(
     .admin-legend-item { display:inline-flex; align-items:center; gap:5px; font-size:.80rem; font-weight:600; }
     .admin-legend-dot { width:14px; height:14px; border-radius:3px; display:inline-block; }
     .admin-timeline-head { min-height:66px; }
-    .admin-timeline-spacer { width:100%; }
-    .admin-timeline-closed { height:40px; min-height:40px; max-height:40px; margin:1px 0; }
+    .admin-timeline-spacer { width:100%; margin:0 !important; padding:0 !important; }
+    .admin-timeline-closed { height:40px; min-height:40px; max-height:40px; margin:0; }
     div[data-testid="stHorizontalBlock"]:has(.admin-timeline-head) { position:relative; overflow:visible; }
+    div[data-testid="stHorizontalBlock"]:has(.admin-timeline-head)::before {
+        content:""; position:absolute; left:0; right:0; top:74px; bottom:0; pointer-events:none; z-index:19;
+        background:repeating-linear-gradient(
+            to bottom,
+            transparent 0,
+            transparent 39px,
+            rgba(148,163,184,.22) 39px,
+            rgba(148,163,184,.22) 40px
+        );
+    }
     div[data-testid="stHorizontalBlock"]:has(.admin-timeline-head)::after {
         content:""; position:absolute; left:0; right:0; top:74px; bottom:0; pointer-events:none; z-index:20;
         background:repeating-linear-gradient(
             to bottom,
             transparent 0,
-            transparent 83px,
-            rgba(100,116,139,.48) 83px,
-            rgba(100,116,139,.48) 84px
+            transparent 79px,
+            rgba(100,116,139,.58) 79px,
+            rgba(100,116,139,.58) 80px
         );
     }
     div[data-testid="stHorizontalBlock"]:has(.admin-timeline-head) > div[data-testid="stColumn"] {
         position:relative; z-index:1;
     }
-    div[class*="st-key-admin_free_"] { margin:0 !important; padding:0 !important; }
+    div[class*="st-key-admin_free_"] { margin:0 !important; padding:0 !important; height:40px !important; min-height:40px !important; }
+    div[class*="st-key-admin_free_"] > div { margin:0 !important; padding:0 !important; height:40px !important; min-height:40px !important; }
     div[class*="st-key-admin_free_"] button {
         height:40px !important; min-height:40px !important; max-height:40px !important;
-        margin:1px 0 !important; padding:2px 4px !important;
+        margin:0 !important; padding:2px 4px !important;
         white-space:normal !important; line-height:1.1 !important; font-size:.72rem !important;
     }
     div[class*="st-key-edit_"] { margin:0 !important; padding:0 !important; }
+    div[class*="st-key-edit_"] > div { margin:0 !important; padding:0 !important; }
     div[class*="st-key-edit_"] button {
-        margin:1px 0 !important; padding:3px 5px !important;
+        margin:0 !important; padding:3px 5px !important;
         white-space:pre-line !important; overflow-wrap:anywhere !important;
         line-height:1.12 !important; font-size:.70rem !important; overflow:visible !important;
-    }
-    div[class*="st-key-edit_"] button p,
-    div[class*="st-key-edit_"] button div,
-    div[class*="st-key-edit_"] button span {
-        white-space:pre-line !important;
-        overflow-wrap:anywhere !important;
-        text-align:center !important;
-        line-height:1.12 !important;
-        margin:0 !important;
     }
     @media (max-width: 1000px) { .admin-calendar-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } .admin-day-card { min-height:560px; } }
     @media (max-width: 650px) { .admin-calendar-grid { grid-template-columns:1fr; } .admin-day-card { min-height:auto; } }
@@ -1055,7 +1058,7 @@ def admin_calendar_fragment():
     timeline_start = min(opening_values) if opening_values else 9 * 60
     timeline_end = max(closing_values) if closing_values else 17 * 60
     cell_minutes = 30
-    cell_height = 42
+    cell_height = 40
     timeline_height = ((timeline_end - timeline_start) // cell_minutes) * cell_height
 
     columns = st.columns(7, gap="small")
@@ -1138,8 +1141,8 @@ def admin_calendar_fragment():
                     duration = max(int(booking.get("duration_min") or 30), 30)
                     duration = min(duration, closing - cursor)
                     card_height = max(
-                        round(duration / cell_minutes * cell_height) - 2,
-                        cell_height - 2,
+                        round(duration / cell_minutes * cell_height),
+                        cell_height,
                     )
                     color = (
                         STATUS_COLORS.get(booking["status"], "#64748b")
@@ -1172,11 +1175,11 @@ def admin_calendar_fragment():
                     dog = booking.get("dog") or {}
                     owner_name = booking.get("customer_name") or "Névtelen gazdi"
                     dog_name = dog.get("name") or "Nincs kutyanév"
-                    label = "\n".join((
-                        f"{time_text} {owner_name}",
-                        dog_name,
-                        booking["service"],
-                    ))
+                    label = (
+                        f"{time_text} {owner_name}  \n"
+                        f"{dog_name}  \n"
+                        f"{booking['service']}"
+                    )
                     if st.button(
                         label,
                         key=button_key,
