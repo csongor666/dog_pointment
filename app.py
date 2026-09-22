@@ -74,9 +74,9 @@ st.markdown(
         background:repeating-linear-gradient(
             to bottom,
             transparent 0,
-            transparent 79px,
-            rgba(100,116,139,.48) 79px,
-            rgba(100,116,139,.48) 80px
+            transparent 85px,
+            rgba(100,116,139,.48) 85px,
+            rgba(100,116,139,.48) 86px
         );
     }
     div[data-testid="stHorizontalBlock"]:has(.admin-timeline-head) > div[data-testid="stColumn"] {
@@ -102,7 +102,7 @@ st.markdown(
     }
     div[class*="st-key-admin_free_"] { margin:0 !important; padding:0 !important; }
     div[class*="st-key-admin_free_"] button {
-        height:40px !important; min-height:40px !important; max-height:40px !important;
+        height:43px !important; min-height:43px !important; max-height:43px !important;
         margin:0 !important; padding:2px 4px !important;
         white-space:normal !important; line-height:1.1 !important; font-size:.72rem !important;
     }
@@ -1064,7 +1064,7 @@ def admin_calendar_fragment():
     timeline_start = min(opening_values) if opening_values else 9 * 60
     timeline_end = max(closing_values) if closing_values else 17 * 60
     cell_minutes = 30
-    cell_height = 40
+    cell_height = 43
     timeline_height = ((timeline_end - timeline_start) // cell_minutes) * cell_height
 
     columns = st.columns(7, gap="small")
@@ -1098,8 +1098,7 @@ def admin_calendar_fragment():
             percentage = round(100 * used / capacity) if capacity else 0
             st.markdown(
                 f'<div class="day-head admin-timeline-head">'
-                f'{DAY_NAMES[day.weekday()]} {day:%m.%d}<br>'
-                f'{used}/{capacity} perc ({percentage}%)</div>',
+                f'{DAY_NAMES[day.weekday()]} {day:%m.%d}</div>',
                 unsafe_allow_html=True,
             )
 
@@ -1116,7 +1115,7 @@ def admin_calendar_fragment():
                     '<div class="slot-card slot-closed admin-timeline-closed">Zárva</div>',
                     unsafe_allow_html=True,
                 )
-                remaining = max(timeline_height - 42, 0)
+                remaining = max(timeline_height - cell_height, 0)
                 st.markdown(
                     f'<div class="admin-timeline-spacer" style="height:{remaining}px"></div>',
                     unsafe_allow_html=True,
