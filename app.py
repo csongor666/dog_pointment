@@ -65,6 +65,35 @@ st.markdown(
     .admin-legend-row { display:flex; flex-wrap:wrap; gap:8px 14px; margin:8px 0 14px 0; }
     .admin-legend-item { display:inline-flex; align-items:center; gap:5px; font-size:.80rem; font-weight:600; }
     .admin-legend-dot { width:14px; height:14px; border-radius:3px; display:inline-block; }
+    .admin-timeline-head { min-height:66px; }
+    .admin-timeline-spacer { width:100%; }
+    .admin-timeline-closed { height:40px; min-height:40px; max-height:40px; margin:1px 0; }
+    div[data-testid="stHorizontalBlock"]:has(.admin-timeline-head) { position:relative; overflow:visible; }
+    div[data-testid="stHorizontalBlock"]:has(.admin-timeline-head)::after {
+        content:""; position:absolute; left:0; right:0; top:74px; bottom:0; pointer-events:none; z-index:20;
+        background:repeating-linear-gradient(
+            to bottom,
+            transparent 0,
+            transparent 83px,
+            rgba(100,116,139,.48) 83px,
+            rgba(100,116,139,.48) 84px
+        );
+    }
+    div[data-testid="stHorizontalBlock"]:has(.admin-timeline-head) > div[data-testid="stColumn"] {
+        position:relative; z-index:1;
+    }
+    div[class*="st-key-admin_free_"] { margin:0 !important; padding:0 !important; }
+    div[class*="st-key-admin_free_"] button {
+        height:40px !important; min-height:40px !important; max-height:40px !important;
+        margin:1px 0 !important; padding:2px 4px !important;
+        white-space:normal !important; line-height:1.1 !important; font-size:.72rem !important;
+    }
+    div[class*="st-key-edit_"] { margin:0 !important; padding:0 !important; }
+    div[class*="st-key-edit_"] button {
+        margin:1px 0 !important; padding:3px 5px !important;
+        white-space:pre-line !important; overflow-wrap:anywhere !important;
+        line-height:1.12 !important; font-size:.70rem !important; overflow:visible !important;
+    }
     @media (max-width: 1000px) { .admin-calendar-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } .admin-day-card { min-height:560px; } }
     @media (max-width: 650px) { .admin-calendar-grid { grid-template-columns:1fr; } .admin-day-card { min-height:auto; } }
     div[data-testid="stButton"] button[kind="primary"] { background:#22c55e; border-color:#16a34a; color:white; }
@@ -878,6 +907,106 @@ def edit_booking_dialog(booking_id):
             st.rerun()
 
 
+@st.dialog("Adminisztrátori foglalás rögzítése", width="large")
+def admin_free_slot_booking_dialog(selected_date, selected_time):
+    st.info(f"Kiválasztott időpont: {selected_date} {selected_time}")
+    service = st.selectbox(
+        "Szolgáltatás",
+        list(SERVICES),
+        key=f"admin_new_service_{selected_date}_{selected_time}",
+    )
+    with st.form(f"admin_new_booking_{selected_date}_{selected_time}"):
+        col1, col2 = st.columns(2)
+        with col1:
+            owner = st.text_input("Név *")
+            phone = st.text_input("Telefon *")
+            email = st.text_input("E-mail *")
+        with col2:
+            dog_name = st.text_input("Kutya neve *")
+            breed = st.text_input("Fajta")
+            note = st.text_area("Megjegyzés")
+        newsletter = st.checkbox(
+            "A gazdi hozzájárul a hírlevélhez és akciós értesítésekhez.",
+            value=False,
+        )
+        send_email = st.checkbox("Visszaigazoló e-mail küldése", value=True)
+        submit = st.form_submit_button(
+            "Foglalás rögzítése",
+            type="primary",
+            use_container_width=True,
+        )
+    if not submit:
+        return
+
+    owner, phone, email, dog_name = (
+        " ".join(value.split())
+        for value in (owner, phone, email.lower(), dog_name)
+    )
+    if len(owner) < 3 or not PHONE_RE.fullmatch(phone) or not EMAIL_RE.fullmatch(email) or not dog_name:
+        st.error("Ellenőrizd a kötelező mezőket.")
+        return
+
+    selected_week = monday_of(selected_date)
+    fresh_bundle = load_admin_week(selected_week)
+    valid_slots, _ = available_slots_from_bundle(
+        selected_date,
+        SERVICES[service],
+        fresh_bundle,
+        admin=True,
+    )
+    if selected_time not in valid_slots:
+        st.error("A kiválasztott időpont ehhez a szolgáltatáshoz már nem szabad.")
+        return
+
+    with st.spinner("Adminisztrátori foglalás mentése...", show_time=True):
+        found = (
+            DB.table("dogs").select("id")
+            .eq("customer_email", email)
+            .ilike("name", dog_name)
+            .limit(1).execute().data or []
+        )
+        dog_payload = {
+            "customer_name": owner,
+            "customer_phone": phone,
+            "customer_email": email,
+            "breed": breed or None,
+            "notes": note or None,
+            "newsletter_consent": newsletter,
+            "newsletter_consent_at": datetime.now(TZ).isoformat() if newsletter else None,
+        }
+        if found:
+            dog_id = found[0]["id"]
+            DB.table("dogs").update(dog_payload).eq("id", dog_id).execute()
+        else:
+            dog_payload["name"] = dog_name
+            dog_id = DB.table("dogs").insert(dog_payload).execute().data[0]["id"]
+
+        record = {
+            "booking_date": selected_date.isoformat(),
+            "booking_time": selected_time,
+            "service": service,
+            "duration_min": SERVICES[service],
+            "customer_name": owner,
+            "phone": phone,
+            "email": email,
+            "dog_id": dog_id,
+            "status": "active",
+        }
+        saved = DB.table("bookings").insert(record).execute().data[0]
+        clear_public_cache()
+        email_ok, email_error = (True, None)
+        if send_email:
+            email_ok, email_error = send_confirmation(saved)
+
+    st.session_state["admin_flash"] = (
+        f"Az adminisztrátori foglalás rögzítve: {selected_date} {selected_time}."
+    )
+    if send_email and not email_ok:
+        st.warning(f"A foglalás elkészült, de az e-mail nem ment ki: {email_error}")
+        return
+    st.rerun()
+
+
 @st.fragment
 def admin_calendar_fragment():
     week_start = week_navigation("admin_week")
@@ -894,112 +1023,182 @@ def admin_calendar_fragment():
         f'style="background:{color}"></span>{html.escape(label)}</span>'
         for color, label in legend_items
     )
-    st.markdown(f'<div class="admin-legend-row">{legend_html}</div>', unsafe_allow_html=True)
+    st.markdown(
+        f'<div class="admin-legend-row">{legend_html}</div>',
+        unsafe_allow_html=True,
+    )
+
     with st.spinner("Heti naptár frissítése...", show_time=True):
         bundle = load_admin_week(week_start)
+
+    day_data = []
+    opening_values = []
+    closing_values = []
+    for day_index in range(7):
+        day = week_start + timedelta(days=day_index)
+        schedule = schedule_from_bundle(day, bundle)
+        bookings = bookings_from_bundle(day, bundle)
+        day_data.append((day, schedule, bookings))
+        if schedule.get("open") and schedule.get("from") and schedule.get("to"):
+            opening_values.append(minute_of_day(schedule["from"]))
+            closing_values.append(minute_of_day(schedule["to"]))
+
+    timeline_start = min(opening_values) if opening_values else 9 * 60
+    timeline_end = max(closing_values) if closing_values else 17 * 60
+    cell_minutes = 30
+    cell_height = 42
+    timeline_height = ((timeline_end - timeline_start) // cell_minutes) * cell_height
+
     columns = st.columns(7, gap="small")
-    # A hét minden naposzlopa azonos minimális magasságot kap.
     st.markdown(
-        """
+        f"""
         <style>
-        div[data-testid="stHorizontalBlock"]:has(.day-head) > div[data-testid="stColumn"] {
-            min-height: 760px;
+        div[data-testid="stHorizontalBlock"]:has(.admin-timeline-head) > div[data-testid="stColumn"] {{
+            min-height: {timeline_height + 82}px;
             border: 1px solid #dbe3ec;
             border-radius: 10px;
             padding: 7px;
-            background: #ffffff;
-        }
-        div[data-testid="stHorizontalBlock"]:has(.day-head) > div[data-testid="stColumn"] > div {
-            height: 100%;
-        }
+            background: transparent;
+        }}
         </style>
         """,
         unsafe_allow_html=True,
     )
-    for day_index, day_column in enumerate(columns):
-        day = week_start + timedelta(days=day_index)
+
+    for day_column, (day, day_schedule, bookings) in zip(columns, day_data):
         with day_column:
-            day_schedule = schedule_from_bundle(day, bundle)
-            bookings = bookings_from_bundle(day, bundle)
             capacity = (
                 minute_of_day(day_schedule["to"]) - minute_of_day(day_schedule["from"])
-                if day_schedule.get("open") and day_schedule.get("from") and day_schedule.get("to") else 0
+                if day_schedule.get("open") and day_schedule.get("from") and day_schedule.get("to")
+                else 0
             )
-            used = sum(int(item.get("duration_min") or 0) for item in bookings if item.get("status") == "active")
+            used = sum(
+                int(item.get("duration_min") or 0)
+                for item in bookings
+                if item.get("status") == "active"
+            )
             percentage = round(100 * used / capacity) if capacity else 0
             st.markdown(
-                f'<div class="day-head">{DAY_NAMES[day.weekday()]} {day:%m.%d}<br>'
-                f'{used}/{capacity} perc ({percentage}%)</div>', unsafe_allow_html=True,
+                f'<div class="day-head admin-timeline-head">'
+                f'{DAY_NAMES[day.weekday()]} {day:%m.%d}<br>'
+                f'{used}/{capacity} perc ({percentage}%)</div>',
+                unsafe_allow_html=True,
             )
-            if not day_schedule.get("open"):
-                st.markdown('<div class="slot-card slot-closed">Zárva</div>', unsafe_allow_html=True)
-                continue
-            free, _ = available_slots_from_bundle(day, 30, bundle, admin=True)
-            calendar_items = ([{"time": slot, "kind": "free"} for slot in free] +
-                              [{"time": str(item["booking_time"])[:5], "kind": "booking", "booking": item} for item in bookings])
-            calendar_items.sort(key=lambda item: item["time"])
-            last_hour = None
-            for item in calendar_items:
-                item_hour = item["time"][:2]
-                if item_hour != last_hour:
-                    st.markdown(
-                        f'<div class="admin-hour-line"><span>{item_hour}:00</span></div>',
-                        unsafe_allow_html=True,
-                    )
-                    last_hour = item_hour
-                if item["kind"] == "free":
-                    st.markdown(
-                        f'<div class="admin-slot-card slot-free">{item["time"]} Szabad</div>',
-                        unsafe_allow_html=True,
-                    )
-                    continue
-                booking = item["booking"]
-                color = (
-                    STATUS_COLORS.get(booking["status"], "#64748b")
-                    if color_mode == "Státusz szerint"
-                    else SERVICE_COLORS.get(booking["service"], "#64748b")
-                )
-                button_key = f"edit_{booking['id']}"
-                button_css_id = f"admin-slot-{booking['id']}"
-                # A rejtett anchor alapján kizárólag az utána következő szerkesztőgomb kapja a foglalás színét.
+
+            schedule_open = (
+                day_schedule.get("open")
+                and day_schedule.get("from")
+                and day_schedule.get("to")
+            )
+            opening = minute_of_day(day_schedule["from"]) if schedule_open else timeline_start
+            closing = minute_of_day(day_schedule["to"]) if schedule_open else timeline_end
+
+            if not schedule_open:
                 st.markdown(
-                    f'<span id="{button_css_id}"></span>'
-                    f'<style>'
-                    f'.st-key-{button_key} button {{'
-                    f'background-color:{color} !important;'
-                    f'border-color:{color} !important;'
-                    f'color:white !important;'
-                    f'font-weight:700 !important;'
-                    f'height:58px !important;'
-                    f'min-height:58px !important;'
-                    f'max-height:58px !important;'
-                    f'white-space:pre-line !important;'
-                    f'line-height:1.15 !important;'
-                    f'overflow:hidden !important;'
-                    f'}}'
-                    f'.st-key-{button_key} button:hover {{'
-                    f'filter:brightness(0.92);'
-                    f'border-color:{color} !important;'
-                    f'}}'
-                    f'</style>',
+                    '<div class="slot-card slot-closed admin-timeline-closed">Zárva</div>',
                     unsafe_allow_html=True,
                 )
-                dog = booking.get("dog") or {}
-                owner_name = booking.get("customer_name") or "Névtelen gazdi"
-                dog_name = dog.get("name") or "Nincs kutyanév"
-                label = (
-                    f"{item['time']} {owner_name}\n"
-                    f"{dog_name} | {booking['service']}"
+                remaining = max(timeline_height - 42, 0)
+                st.markdown(
+                    f'<div class="admin-timeline-spacer" style="height:{remaining}px"></div>',
+                    unsafe_allow_html=True,
                 )
-                if st.button(
-                    label,
-                    key=button_key,
-                    use_container_width=True,
-                ):
-                    edit_booking_dialog(booking["id"])
-            # Az üres alsó terület kitölti a rövidebb naposzlopokat.
-            st.markdown('<div class="admin-empty-fill"></div>', unsafe_allow_html=True)
+                continue
 
+            if opening > timeline_start:
+                top_gap = round((opening - timeline_start) / cell_minutes * cell_height)
+                st.markdown(
+                    f'<div class="admin-timeline-spacer" style="height:{top_gap}px"></div>',
+                    unsafe_allow_html=True,
+                )
+
+            free_slots, _ = available_slots_from_bundle(day, 30, bundle, admin=True)
+            free_set = set(free_slots)
+            booking_by_start = {}
+            for booking in bookings:
+                booking_by_start.setdefault(
+                    minute_of_day(booking["booking_time"]), booking
+                )
+
+            cursor = opening
+            while cursor < closing:
+                time_text = f"{cursor // 60:02d}:{cursor % 60:02d}"
+                booking = booking_by_start.get(cursor)
+
+                if booking:
+                    duration = max(int(booking.get("duration_min") or 30), 30)
+                    duration = min(duration, closing - cursor)
+                    card_height = max(
+                        round(duration / cell_minutes * cell_height) - 2,
+                        cell_height - 2,
+                    )
+                    color = (
+                        STATUS_COLORS.get(booking["status"], "#64748b")
+                        if color_mode == "Státusz szerint"
+                        else SERVICE_COLORS.get(booking["service"], "#64748b")
+                    )
+                    button_key = f"edit_{booking['id']}"
+                    st.markdown(
+                        f'<style>'
+                        f'.st-key-{button_key} button {{'
+                        f'background-color:{color} !important;'
+                        f'border-color:{color} !important;'
+                        f'color:white !important;'
+                        f'font-weight:700 !important;'
+                        f'height:{card_height}px !important;'
+                        f'min-height:{card_height}px !important;'
+                        f'max-height:{card_height}px !important;'
+                        f'white-space:pre-line !important;'
+                        f'overflow-wrap:anywhere !important;'
+                        f'line-height:1.12 !important;'
+                        f'font-size:.70rem !important;'
+                        f'overflow:visible !important;'
+                        f'}}'
+                        f'.st-key-{button_key} button:hover {{'
+                        f'filter:brightness(0.92); border-color:{color} !important;'
+                        f'}}'
+                        f'</style>',
+                        unsafe_allow_html=True,
+                    )
+                    dog = booking.get("dog") or {}
+                    owner_name = booking.get("customer_name") or "Névtelen gazdi"
+                    dog_name = dog.get("name") or "Nincs kutyanév"
+                    label = (
+                        f"{time_text} {owner_name}\n"
+                        f"{dog_name}\n{booking['service']}"
+                    )
+                    if st.button(
+                        label,
+                        key=button_key,
+                        use_container_width=True,
+                    ):
+                        edit_booking_dialog(booking["id"])
+                    cursor += duration
+                    continue
+
+                if time_text in free_set:
+                    free_key = f"admin_free_{day.isoformat()}_{cursor}"
+                    if st.button(
+                        f"{time_text} Szabad",
+                        key=free_key,
+                        type="primary",
+                        use_container_width=True,
+                    ):
+                        admin_free_slot_booking_dialog(day, time_text)
+                else:
+                    st.markdown(
+                        f'<div class="admin-timeline-spacer" '
+                        f'style="height:{cell_height}px"></div>',
+                        unsafe_allow_html=True,
+                    )
+                cursor += cell_minutes
+
+            if closing < timeline_end:
+                bottom_gap = round((timeline_end - closing) / cell_minutes * cell_height)
+                st.markdown(
+                    f'<div class="admin-timeline-spacer" style="height:{bottom_gap}px"></div>',
+                    unsafe_allow_html=True,
+                )
 
 def normalize_email(value):
     return (value or "").strip().lower()
