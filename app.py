@@ -871,6 +871,25 @@ def admin_calendar_fragment():
     color_mode = st.radio(
         "Színezés", ["Státusz szerint", "Szolgáltatás szerint"], horizontal=True
     )
+    if color_mode == "Státusz szerint":
+        legend_items = [
+            (STATUS_COLORS["active"], STATUS["active"]),
+            (STATUS_COLORS["completed"], STATUS["completed"]),
+            (STATUS_COLORS["cancelled"], STATUS["cancelled"]),
+            (STATUS_COLORS["no_show"], STATUS["no_show"]),
+            ("#22c55e", "Szabad"),
+        ]
+    else:
+        legend_items = [
+            (SERVICE_COLORS[service], service)
+            for service in SERVICES
+        ]
+        legend_items.append(("#22c55e", "Szabad"))
+    legend_html = " &nbsp; ".join(
+        f'<span class="legend" style="background:{color}"></span>{html.escape(label)}'
+        for color, label in legend_items
+    )
+    st.markdown(legend_html, unsafe_allow_html=True)
     with st.spinner("Heti naptár frissítése...", show_time=True):
         bundle = load_admin_week(week_start)
     columns = st.columns(7)
