@@ -69,18 +69,18 @@ st.markdown(
     .admin-timeline-spacer { width:100%; }
     .admin-timeline-closed { height:40px; min-height:40px; max-height:40px; margin:1px 0; }
     div[data-testid="stHorizontalBlock"]:has(.admin-timeline-head) { position:relative; overflow:visible; }
-    div[data-testid="stHorizontalBlock"]:has(.admin-timeline-head)::after {
-        content:""; position:absolute; left:0; right:0; top:74px; bottom:0; pointer-events:none; z-index:20;
-        background:repeating-linear-gradient(
+    div[data-testid="stHorizontalBlock"]:has(.admin-timeline-head) > div[data-testid="stColumn"] {
+        position:relative;
+        z-index:1;
+        background-image:repeating-linear-gradient(
             to bottom,
             transparent 0,
-            transparent 85px,
-            rgba(100,116,139,.48) 85px,
-            rgba(100,116,139,.48) 86px
+            transparent 79px,
+            rgba(100,116,139,.48) 79px,
+            rgba(100,116,139,.48) 80px
         );
-    }
-    div[data-testid="stHorizontalBlock"]:has(.admin-timeline-head) > div[data-testid="stColumn"] {
-        position:relative; z-index:1;
+        background-position:0 74px;
+        background-repeat:repeat-y;
     }
     /* Az admin idővonal függőleges Streamlit-konténereinek alapértelmezett hézaga nulla. */
     div[data-testid="stHorizontalBlock"]:has(.admin-timeline-head)
@@ -102,7 +102,7 @@ st.markdown(
     }
     div[class*="st-key-admin_free_"] { margin:0 !important; padding:0 !important; }
     div[class*="st-key-admin_free_"] button {
-        height:43px !important; min-height:43px !important; max-height:43px !important;
+        height:40px !important; min-height:40px !important; max-height:40px !important;
         margin:0 !important; padding:2px 4px !important;
         white-space:normal !important; line-height:1.1 !important; font-size:.72rem !important;
     }
@@ -1064,7 +1064,7 @@ def admin_calendar_fragment():
     timeline_start = min(opening_values) if opening_values else 9 * 60
     timeline_end = max(closing_values) if closing_values else 17 * 60
     cell_minutes = 30
-    cell_height = 43
+    cell_height = 40
     timeline_height = ((timeline_end - timeline_start) // cell_minutes) * cell_height
 
     columns = st.columns(7, gap="small")
@@ -1115,7 +1115,7 @@ def admin_calendar_fragment():
                     '<div class="slot-card slot-closed admin-timeline-closed">Zárva</div>',
                     unsafe_allow_html=True,
                 )
-                remaining = max(timeline_height - cell_height, 0)
+                remaining = max(timeline_height - 42, 0)
                 st.markdown(
                     f'<div class="admin-timeline-spacer" style="height:{remaining}px"></div>',
                     unsafe_allow_html=True,
