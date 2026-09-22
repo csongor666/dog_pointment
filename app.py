@@ -69,18 +69,64 @@ st.markdown(
     .admin-timeline-spacer { width:100%; }
     .admin-timeline-closed { height:40px; min-height:40px; max-height:40px; margin:1px 0; }
     div[data-testid="stHorizontalBlock"]:has(.admin-timeline-head) { position:relative; overflow:visible; }
-    div[data-testid="stHorizontalBlock"]:has(.admin-timeline-head) > div[data-testid="stColumn"] {
-        position:relative;
-        z-index:1;
-        background-image:repeating-linear-gradient(
+    div[data-testid="stHorizontalBlock"]:has(.admin-timeline-head)::before {
+        content:"";
+        position:absolute;
+        left:0;
+        right:0;
+        top:74px;
+        bottom:0;
+        pointer-events:none;
+        z-index:19;
+        background:repeating-linear-gradient(
             to bottom,
             transparent 0,
-            transparent 79px,
-            rgba(100,116,139,.48) 79px,
-            rgba(100,116,139,.48) 80px
+            transparent 42px,
+            rgba(148,163,184,.22) 42px,
+            rgba(148,163,184,.22) 43px
         );
-        background-position:0 74px;
-        background-repeat:repeat-y;
+    }
+    div[data-testid="stHorizontalBlock"]:has(.admin-timeline-head)::after {
+        content:"";
+        position:absolute;
+        left:0;
+        right:0;
+        top:74px;
+        bottom:0;
+        pointer-events:none;
+        z-index:20;
+        background:repeating-linear-gradient(
+            to bottom,
+            transparent 0,
+            transparent 84px,
+            rgba(107,114,128,.38) 84px,
+            rgba(107,114,128,.38) 86px
+        );
+    }
+    .admin-time-axis-head {
+        min-height:66px;
+        display:flex;
+        align-items:center;
+        justify-content:center;
+        color:#475569;
+        font-size:.78rem;
+        font-weight:700;
+    }
+    .admin-time-axis { position:relative; width:100%; }
+    .admin-time-label {
+        position:absolute;
+        right:2px;
+        transform:translateY(-50%);
+        padding:0 3px;
+        background:rgba(255,255,255,.94);
+        color:#64748b;
+        font-size:.67rem;
+        line-height:1;
+        font-weight:700;
+        z-index:30;
+    }
+    div[data-testid="stHorizontalBlock"]:has(.admin-timeline-head) > div[data-testid="stColumn"] {
+        position:relative; z-index:1;
     }
     /* Az admin idővonal függőleges Streamlit-konténereinek alapértelmezett hézaga nulla. */
     div[data-testid="stHorizontalBlock"]:has(.admin-timeline-head)
@@ -1067,7 +1113,7 @@ def admin_calendar_fragment():
     cell_height = 40
     timeline_height = ((timeline_end - timeline_start) // cell_minutes) * cell_height
 
-    columns = st.columns(7, gap="small")
+    time_column, *columns = st.columns([0.42, 1, 1, 1, 1, 1, 1, 1], gap="small")
     st.markdown(
         f"""
         <style>
@@ -1082,6 +1128,23 @@ def admin_calendar_fragment():
         """,
         unsafe_allow_html=True,
     )
+
+    with time_column:
+        st.markdown('<div class="admin-time-axis-head">Idő</div>', unsafe_allow_html=True)
+        time_labels = []
+        label_minute = timeline_start
+        while label_minute <= timeline_end:
+            label_top = round((label_minute - timeline_start) / 30 * 43)
+            time_labels.append(
+                f'<span class="admin-time-label" style="top:{label_top}px">'
+                f'{label_minute // 60:02d}:00</span>'
+            )
+            label_minute += 60
+        st.markdown(
+            f'<div class="admin-time-axis" style="height:{timeline_height}px">'
+            f'{"".join(time_labels)}</div>',
+            unsafe_allow_html=True,
+        )
 
     for day_column, (day, day_schedule, bookings) in zip(columns, day_data):
         with day_column:
@@ -1098,7 +1161,8 @@ def admin_calendar_fragment():
             percentage = round(100 * used / capacity) if capacity else 0
             st.markdown(
                 f'<div class="day-head admin-timeline-head">'
-                f'{DAY_NAMES[day.weekday()]} {day:%m.%d}</div>',
+                f'{DAY_NAMES[day.weekday()]} {day:%m.%d}<br>'
+                f'{used}/{capacity} perc ({percentage}%)</div>',
                 unsafe_allow_html=True,
             )
 
