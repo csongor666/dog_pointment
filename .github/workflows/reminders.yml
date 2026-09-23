@@ -30,6 +30,7 @@ jobs:
           GMAIL_ADDRESS: ${{ secrets.GMAIL_ADDRESS }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
           APP_URL: ${{ secrets.APP_URL }}
+          PUBLIC_APP_URL: ${{ secrets.PUBLIC_APP_URL }}
         run: |
           python -c "import os,sys; names=['SUPABASE_URL','SUPABASE_SECRET_KEY','GMAIL_ADDRESS','GMAIL_APP_PASSWORD','APP_URL']; missing=[x for x in names if not os.getenv(x)]; print('Missing:',missing); sys.exit(bool(missing))"
 
@@ -40,4 +41,5 @@ jobs:
           GMAIL_ADDRESS: ${{ secrets.GMAIL_ADDRESS }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
           APP_URL: ${{ secrets.APP_URL }}
+          PUBLIC_APP_URL: ${{ secrets.PUBLIC_APP_URL }}
         run: python reminder.py
