@@ -70,6 +70,7 @@ st.markdown(
     .admin-timeline-closed { box-sizing:border-box; height:40px; min-height:40px; max-height:40px; margin:0; }
     div[data-testid="stHorizontalBlock"]:has(.admin-timeline-head) { position:relative; overflow:visible; }
     div[data-testid="stHorizontalBlock"]:has(.admin-timeline-head)::before {
+        display:none;
         content:"";
         position:absolute;
         left:0;
@@ -87,6 +88,7 @@ st.markdown(
         );
     }
     div[data-testid="stHorizontalBlock"]:has(.admin-timeline-head)::after {
+        display:none;
         content:"";
         position:absolute;
         left:0;
@@ -129,6 +131,28 @@ st.markdown(
         font-weight:700;
         z-index:30;
     }
+    .week-range-label { height:38px; display:flex; align-items:center; justify-content:center; text-align:center; font-size:1.35rem; font-weight:700; }
+    .calendar-day-column { position:relative; }
+    .calendar-day-column::before {
+        content:"";
+        position:absolute;
+        left:7px;
+        right:7px;
+        top:73px;
+        bottom:7px;
+        pointer-events:none;
+        z-index:0;
+        background-image:
+            repeating-linear-gradient(to bottom, transparent 0, transparent 39px, rgba(148,163,184,.22) 39px, rgba(148,163,184,.22) 40px),
+            repeating-linear-gradient(to bottom, transparent 0, transparent 78px, rgba(107,114,128,.38) 78px, rgba(107,114,128,.38) 80px);
+    }
+    .calendar-day-column > div { position:relative; z-index:1; }
+    .public-timeline-head { box-sizing:border-box; height:66px; min-height:66px; max-height:66px; margin:0 !important; }
+    .public-timeline-spacer { box-sizing:border-box; width:100%; margin:0 !important; padding:0 !important; }
+    .public-timeline-card { box-sizing:border-box; height:40px; min-height:40px; max-height:40px; margin:0 !important; padding:2px 4px; border-radius:7px; display:flex; align-items:center; justify-content:center; font-size:.72rem; font-weight:600; text-align:center; }
+    div[class*="st-key-public_free_"] { box-sizing:border-box; margin:0 !important; padding:0 !important; height:40px !important; min-height:40px !important; max-height:40px !important; }
+    div[class*="st-key-public_free_"] > div { box-sizing:border-box; margin:0 !important; padding:0 !important; height:40px !important; min-height:40px !important; max-height:40px !important; }
+    div[class*="st-key-public_free_"] button { box-sizing:border-box !important; height:40px !important; min-height:40px !important; max-height:40px !important; margin:0 !important; padding:2px 4px !important; }
     div[data-testid="stHorizontalBlock"]:has(.admin-timeline-head) > div[data-testid="stColumn"] {
         position:relative; z-index:1;
     }
@@ -150,6 +174,12 @@ st.markdown(
         margin:0 !important;
         padding:0 !important;
     }
+    div[data-testid="stHorizontalBlock"]:has(.public-timeline-head)
+    > div[data-testid="stColumn"] div[data-testid="stVerticalBlock"] { gap:0 !important; row-gap:0 !important; }
+    div[data-testid="stHorizontalBlock"]:has(.public-timeline-head)
+    > div[data-testid="stColumn"] div[data-testid="stElementContainer"] { margin:0 !important; padding:0 !important; }
+    div[data-testid="stHorizontalBlock"]:has(.public-timeline-head)
+    > div[data-testid="stColumn"] div[data-testid="stMarkdownContainer"] { margin:0 !important; padding:0 !important; }
     div[class*="st-key-admin_free_"] { box-sizing:border-box; margin:0 !important; padding:0 !important; height:40px !important; min-height:40px !important; max-height:40px !important; }
     div[class*="st-key-admin_free_"] > div { box-sizing:border-box; margin:0 !important; padding:0 !important; height:40px !important; min-height:40px !important; max-height:40px !important; }
     div[class*="st-key-admin_free_"] button {
@@ -318,7 +348,11 @@ def week_navigation(key):
     if left.button("◀ Előző hét", key=f"{key}_prev", use_container_width=True):
         st.session_state[key] -= timedelta(days=7)
         st.rerun()
-    center.markdown(f"### {st.session_state[key]} – {st.session_state[key] + timedelta(days=6)}")
+    center.markdown(
+        f'<div class="week-range-label">{st.session_state[key]} – '
+        f'{st.session_state[key] + timedelta(days=6)}</div>',
+        unsafe_allow_html=True,
+    )
     if right.button("Következő hét ▶", key=f"{key}_next", use_container_width=True):
         st.session_state[key] += timedelta(days=7)
         st.rerun()
@@ -397,47 +431,141 @@ def chronological_day_items(day, service, bundle, admin=False):
 def public_week_calendar(service):
     week_start = week_navigation("public_week")
     bundle = load_public_week(week_start.isoformat())
-    columns = st.columns(7)
-    selected = None
     today = datetime.now(TZ).date()
-    for day_index, day_column in enumerate(columns):
+    selected = None
+    cell_minutes = 30
+    cell_height = 40
+
+    day_data = []
+    opening_values = []
+    closing_values = []
+    for day_index in range(7):
         day = week_start + timedelta(days=day_index)
+        schedule = schedule_from_bundle(day, bundle)
+        bookings = bookings_from_bundle(day, bundle, ["active"])
+        day_data.append((day, schedule, bookings))
+        if schedule.get("open") and schedule.get("from") and schedule.get("to"):
+            opening_values.append(minute_of_day(schedule["from"]))
+            closing_values.append(minute_of_day(schedule["to"]))
+
+    timeline_start = min(opening_values) if opening_values else 9 * 60
+    timeline_end = max(closing_values) if closing_values else 17 * 60
+    timeline_height = ((timeline_end - timeline_start) // cell_minutes) * cell_height
+    time_column, *columns = st.columns([0.42, 1, 1, 1, 1, 1, 1, 1], gap="small")
+
+    st.markdown(
+        f"""
+        <style>
+        div[data-testid="stHorizontalBlock"]:has(.public-timeline-head) > div[data-testid="stColumn"] {{
+            min-height:{timeline_height + 82}px;
+            border:1px solid #dbe3ec;
+            border-radius:10px;
+            padding:7px;
+            background:#ffffff;
+        }}
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    with time_column:
+        st.markdown('<div class="admin-time-axis-head">Idő</div>', unsafe_allow_html=True)
+        labels = []
+        label_minute = timeline_start
+        while label_minute <= timeline_end:
+            label_top = round((label_minute - timeline_start) / cell_minutes * cell_height + cell_height)
+            labels.append(
+                f'<span class="admin-time-label" style="top:{label_top}px">'
+                f'{label_minute // 60:02d}:00</span>'
+            )
+            label_minute += 60
+        st.markdown(
+            f'<div class="admin-time-axis" style="height:{timeline_height}px">'
+            f'{"".join(labels)}</div>',
+            unsafe_allow_html=True,
+        )
+
+    for day_column, (day, schedule, bookings) in zip(columns, day_data):
         with day_column:
             st.markdown(
-                f'<div class="day-head">{DAY_NAMES[day.weekday()]}<br>{day:%m.%d}</div>',
+                f'<div class="day-head public-timeline-head">'
+                f'{DAY_NAMES[day.weekday()]}<br>{day:%m.%d}</div>',
                 unsafe_allow_html=True,
             )
-            if day < today:
+            schedule_open = schedule.get("open") and schedule.get("from") and schedule.get("to")
+            opening = minute_of_day(schedule["from"]) if schedule_open else timeline_start
+            closing = minute_of_day(schedule["to"]) if schedule_open else timeline_end
+            if opening > timeline_start:
+                top_gap = round((opening - timeline_start) / cell_minutes * cell_height)
                 st.markdown(
-                    '<div class="slot-card slot-closed">Nem foglalható</div>',
+                    f'<div class="public-timeline-spacer" style="height:{top_gap}px"></div>',
                     unsafe_allow_html=True,
                 )
-                continue
-            items, day_schedule = chronological_day_items(day, service, bundle)
-            if not day_schedule.get("open"):
-                st.markdown(
-                    '<div class="slot-card slot-closed">Nem foglalható</div>',
-                    unsafe_allow_html=True,
-                )
-                continue
-            for item in items:
-                if item["kind"] == "busy":
+
+            free_slots, _ = available_slots_from_bundle(day, SERVICES[service], bundle)
+            free_set = set(free_slots)
+            occupied = {}
+            for booking in bookings:
+                start_minute = minute_of_day(booking["booking_time"])
+                duration = max(int(booking.get("duration_min") or 30), 30)
+                for minute in range(start_minute, start_minute + duration, cell_minutes):
+                    occupied[minute] = True
+
+            cursor = opening
+            while cursor < closing:
+                time_text = f"{cursor // 60:02d}:{cursor % 60:02d}"
+                if day < today:
                     st.markdown(
-                        f'<div class="slot-card slot-busy">{item["time"]}</div>',
+                        '<div class="public-timeline-card slot-closed">Nem foglalható</div>',
                         unsafe_allow_html=True,
                     )
-                elif st.button(
-                    item["time"],
-                    key=f"free_{day}_{item['time']}",
-                    type="primary",
-                    use_container_width=True,
-                ):
-                    selected = (day, item["time"])
-            if not items:
+                elif not schedule_open:
+                    st.markdown(
+                        '<div class="public-timeline-card slot-closed">Nem foglalható</div>',
+                        unsafe_allow_html=True,
+                    )
+                elif cursor in occupied:
+                    st.markdown(
+                        '<div class="public-timeline-card slot-busy"></div>',
+                        unsafe_allow_html=True,
+                    )
+                elif time_text in free_set:
+                    if st.button(
+                        time_text,
+                        key=f"public_free_{day.isoformat()}_{cursor}",
+                        type="primary",
+                        use_container_width=True,
+                    ):
+                        selected = (day, time_text)
+                else:
+                    st.markdown(
+                        '<div class="public-timeline-card slot-closed">Nem foglalható</div>',
+                        unsafe_allow_html=True,
+                    )
+                cursor += cell_minutes
+
+            if closing < timeline_end:
+                bottom_gap = round((timeline_end - closing) / cell_minutes * cell_height)
                 st.markdown(
-                    '<div class="slot-card slot-closed">Nincs megfelelő sáv</div>',
+                    f'<div class="public-timeline-spacer" style="height:{bottom_gap}px"></div>',
                     unsafe_allow_html=True,
                 )
+
+    # The day columns receive their grid locally so the half-hour lines do not enter the time column.
+    st.markdown(
+        """
+        <script>
+        (() => {
+          const heads = parent.document.querySelectorAll('.public-timeline-head, .admin-timeline-head');
+          heads.forEach((head) => {
+            const column = head.closest('[data-testid="stColumn"]');
+            if (column) column.classList.add('calendar-day-column');
+          });
+        })();
+        </script>
+        """,
+        unsafe_allow_html=True,
+    )
     return selected
 
 
@@ -1169,7 +1297,7 @@ def admin_calendar_fragment():
             percentage = round(100 * used / capacity) if capacity else 0
             st.markdown(
                 f'<div class="day-head admin-timeline-head">'
-                f'{DAY_NAMES[day.weekday()]} {day:%m.%d}</div>',
+                f'{DAY_NAMES[day.weekday()]}<br>{day:%m.%d}</div>',
                 unsafe_allow_html=True,
             )
 
@@ -1287,6 +1415,20 @@ def admin_calendar_fragment():
                     f'<div class="admin-timeline-spacer" style="height:{bottom_gap}px"></div>',
                     unsafe_allow_html=True,
                 )
+    st.markdown(
+        """
+        <script>
+        (() => {
+          const heads = parent.document.querySelectorAll('.admin-timeline-head');
+          heads.forEach((head) => {
+            const column = head.closest('[data-testid="stColumn"]');
+            if (column) column.classList.add('calendar-day-column');
+          });
+        })();
+        </script>
+        """,
+        unsafe_allow_html=True,
+    )
 
 def normalize_email(value):
     return (value or "").strip().lower()
