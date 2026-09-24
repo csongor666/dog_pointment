@@ -128,7 +128,7 @@ st.markdown(
             rgba(107,114,128,.48) 78px,
             rgba(107,114,128,.48) 80px
         );
-        background-position:0 0;
+        background-position:0 73px;
         background-repeat:repeat-y;
     }
     .admin-time-label {
@@ -152,7 +152,7 @@ st.markdown(
         background-image:
             repeating-linear-gradient(to bottom, transparent 0, transparent 39px, rgba(148,163,184,.30) 39px, rgba(148,163,184,.30) 40px),
             repeating-linear-gradient(to bottom, transparent 0, transparent 78px, rgba(107,114,128,.48) 78px, rgba(107,114,128,.48) 80px);
-        background-position:0 113px, 0 73px;
+        background-position:0 153px, 0 73px;
         background-repeat:repeat-y, repeat-y;
         background-clip:padding-box;
     }
@@ -1355,6 +1355,7 @@ def admin_calendar_fragment():
                         f'<style>'
                         f'.st-key-{button_key} button {{'
                         f'background-color:{color} !important;'
+                        f'border:2px solid {color} !important;'
                         f'border-color:{color} !important;'
                         f'color:white !important;'
                         f'font-weight:700 !important;'
