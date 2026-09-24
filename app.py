@@ -51,9 +51,9 @@ st.markdown(
     .block-container { max-width: 1450px; }
     .legend { display:inline-block; width:14px; height:14px; border-radius:3px; margin-right:5px; }
     .slot-card { padding:7px 5px; border-radius:7px; margin:3px 0; font-size:.82rem; text-align:center; font-weight:600; }
-    .slot-free { background:#22c55e; color:white; }
-    .slot-busy { background:#eab308; color:#422006; }
-    .slot-closed { background:#9ca3af; color:white; }
+    .slot-free { background:#22c55e; border:1px solid #16a34a; color:white; }
+    .slot-busy { background:#eab308; border:1px solid #ca8a04; color:#422006; }
+    .slot-closed { background:#9ca3af; border:1px solid #6b7280; color:white; }
     .day-head { box-sizing:border-box; text-align:center; font-weight:700; padding:8px 3px; background:#f1f5f9; border-radius:8px; margin:0; height:66px; min-height:66px; max-height:66px; display:flex; align-items:center; justify-content:center; }
     .admin-calendar-grid { display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); gap:8px; align-items:stretch; }
     .admin-day-card { border:1px solid #dbe3ec; border-radius:10px; background:#ffffff; padding:7px; min-height:720px; display:flex; flex-direction:column; }
@@ -118,7 +118,19 @@ st.markdown(
         font-size:.78rem;
         font-weight:700;
     }
-    .admin-time-axis { position:relative; width:100%; }
+    .admin-time-axis {
+        position:relative;
+        width:100%;
+        background-image:repeating-linear-gradient(
+            to bottom,
+            transparent 0,
+            transparent 78px,
+            rgba(107,114,128,.48) 78px,
+            rgba(107,114,128,.48) 80px
+        );
+        background-position:0 0;
+        background-repeat:repeat-y;
+    }
     .admin-time-label {
         position:absolute;
         right:2px;
@@ -140,7 +152,7 @@ st.markdown(
         background-image:
             repeating-linear-gradient(to bottom, transparent 0, transparent 39px, rgba(148,163,184,.30) 39px, rgba(148,163,184,.30) 40px),
             repeating-linear-gradient(to bottom, transparent 0, transparent 78px, rgba(107,114,128,.48) 78px, rgba(107,114,128,.48) 80px);
-        background-position:0 73px, 0 73px;
+        background-position:0 113px, 0 73px;
         background-repeat:repeat-y, repeat-y;
         background-clip:padding-box;
     }
@@ -151,7 +163,7 @@ st.markdown(
     .public-timeline-card { box-sizing:border-box; margin:0 !important; padding:2px 4px; border-radius:7px; display:flex; align-items:center; justify-content:center; font-size:.72rem; font-weight:600; text-align:center; position:relative; z-index:2; }
     div[class*="st-key-public_free_"] { box-sizing:border-box; margin:0 !important; padding:0 !important; height:40px !important; min-height:40px !important; max-height:40px !important; }
     div[class*="st-key-public_free_"] > div { box-sizing:border-box; margin:0 !important; padding:0 !important; height:40px !important; min-height:40px !important; max-height:40px !important; }
-    div[class*="st-key-public_free_"] button { box-sizing:border-box !important; height:40px !important; min-height:40px !important; max-height:40px !important; margin:0 !important; padding:2px 4px !important; }
+    div[class*="st-key-public_free_"] button { box-sizing:border-box !important; height:40px !important; min-height:40px !important; max-height:40px !important; margin:0 !important; padding:2px 4px !important; border:1px solid #16a34a !important; }
     div[data-testid="stHorizontalBlock"]:has(.admin-timeline-head) > div[data-testid="stColumn"] {
         position:relative; z-index:1;
     }
@@ -185,6 +197,7 @@ st.markdown(
         box-sizing:border-box !important;
         height:40px !important; min-height:40px !important; max-height:40px !important;
         margin:0 !important; padding:2px 4px !important;
+        border:1px solid #16a34a !important;
         white-space:normal !important; line-height:1.1 !important; font-size:.72rem !important;
     }
     div[class*="st-key-edit_"] { box-sizing:border-box; margin:0 !important; padding:0 !important; }
