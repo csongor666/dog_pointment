@@ -75,7 +75,7 @@ st.markdown(
         position:absolute;
         left:0;
         right:0;
-        top:148px;
+        top:74px;
         bottom:0;
         pointer-events:none;
         z-index:19;
@@ -152,7 +152,7 @@ st.markdown(
         background-image:
             repeating-linear-gradient(to bottom, transparent 0, transparent 39px, rgba(148,163,184,.30) 39px, rgba(148,163,184,.30) 40px),
             repeating-linear-gradient(to bottom, transparent 0, transparent 78px, rgba(107,114,128,.48) 78px, rgba(107,114,128,.48) 80px);
-        background-position:0 113px, 0 74px;
+        background-position:0 226px, 0 148px;
         background-repeat:repeat-y, repeat-y;
         background-clip:padding-box;
     }
