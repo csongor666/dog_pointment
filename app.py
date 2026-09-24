@@ -128,7 +128,7 @@ st.markdown(
             rgba(107,114,128,.48) 78px,
             rgba(107,114,128,.48) 80px
         );
-        background-position:0 74px;
+        background-position:0 80px;
         background-repeat:repeat-y;
     }
     .admin-time-label {
