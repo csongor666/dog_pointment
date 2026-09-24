@@ -133,20 +133,16 @@ st.markdown(
     }
     .week-range-label { height:38px; display:flex; align-items:center; justify-content:center; text-align:center; font-size:1.35rem; font-weight:700; }
     div[data-testid="stColumn"]:has(.admin-timeline-head),
-    div[data-testid="stColumn"]:has(.public-timeline-head) { position:relative; isolation:isolate; }
-    div[data-testid="stColumn"]:has(.admin-timeline-head)::before,
-    div[data-testid="stColumn"]:has(.public-timeline-head)::before {
-        content:"";
-        position:absolute;
-        left:7px;
-        right:7px;
-        top:73px;
-        bottom:7px;
-        pointer-events:none;
-        z-index:0;
+    div[data-testid="stColumn"]:has(.public-timeline-head) {
+        position:relative;
+        isolation:isolate;
+        background-color:#ffffff;
         background-image:
-            repeating-linear-gradient(to bottom, transparent 0, transparent 39px, rgba(148,163,184,.28) 39px, rgba(148,163,184,.28) 40px),
-            repeating-linear-gradient(to bottom, transparent 0, transparent 78px, rgba(107,114,128,.46) 78px, rgba(107,114,128,.46) 80px);
+            repeating-linear-gradient(to bottom, transparent 0, transparent 39px, rgba(148,163,184,.30) 39px, rgba(148,163,184,.30) 40px),
+            repeating-linear-gradient(to bottom, transparent 0, transparent 78px, rgba(107,114,128,.48) 78px, rgba(107,114,128,.48) 80px);
+        background-position:0 73px, 0 73px;
+        background-repeat:repeat-y, repeat-y;
+        background-clip:padding-box;
     }
     div[data-testid="stColumn"]:has(.admin-timeline-head) > div,
     div[data-testid="stColumn"]:has(.public-timeline-head) > div { position:relative; z-index:1; }
@@ -464,7 +460,7 @@ def public_week_calendar(service):
             border:1px solid #dbe3ec;
             border-radius:10px;
             padding:7px;
-            background:#ffffff;
+            background-color:transparent;
         }}
         </style>
         """,
@@ -1246,7 +1242,7 @@ def admin_calendar_fragment():
             border: 1px solid #dbe3ec;
             border-radius: 10px;
             padding: 7px;
-            background: transparent;
+            background-color:transparent;
         }}
         </style>
         """,
