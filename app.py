@@ -128,7 +128,7 @@ st.markdown(
             rgba(107,114,128,.48) 78px,
             rgba(107,114,128,.48) 80px
         );
-        background-position:0 113px;
+        background-position:0 74px;
         background-repeat:repeat-y;
     }
     .admin-time-label {
@@ -152,7 +152,7 @@ st.markdown(
         background-image:
             repeating-linear-gradient(to bottom, transparent 0, transparent 39px, rgba(148,163,184,.30) 39px, rgba(148,163,184,.30) 40px),
             repeating-linear-gradient(to bottom, transparent 0, transparent 78px, rgba(107,114,128,.48) 78px, rgba(107,114,128,.48) 80px);
-        background-position:0 113px, 0 73px;
+        background-position:0 113px, 0 74px;
         background-repeat:repeat-y, repeat-y;
         background-clip:padding-box;
     }
